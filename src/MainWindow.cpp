@@ -1,6 +1,7 @@
 #include "faceveil/MainWindow.hpp"
 
 #include "faceveil/ProcessorWorker.hpp"
+#include "faceveil/ReviewDialog.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -22,6 +23,7 @@
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QToolButton>
 #include <QThread>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -210,7 +212,23 @@ namespace faceveil
                 color: #6B7280;
                 font-size: 12px;
             }
+            QToolButton#advancedToggle {
+                background: transparent;
+                border: none;
+                padding: 4px 2px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #111827;
+            }
+            QToolButton#advancedToggle:hover {
+                color: #374151;
+            }
         )";
+
+        constexpr double kDefaultScoreThreshold = 0.5;
+        constexpr double kDefaultNmsThreshold = 0.4;
+        constexpr int kDefaultBlockSize = 28;
+        constexpr double kDefaultPadding = 0.18;
 
         QString defaultOutputDirectory()
         {
@@ -373,6 +391,12 @@ namespace faceveil
             clearInputs->setCursor(Qt::PointingHandCursor);
             recursiveCheck_ = new QCheckBox("Include subfolders", card);
             recursiveCheck_->setChecked(true);
+            reviewCheck_ = new QCheckBox("Review each image", card);
+            reviewCheck_->setChecked(false);
+            reviewCheck_->setToolTip(
+                "Before saving each image, open a preview where you can:\n"
+                "  • Click a detected box to exclude it\n"
+                "  • Drag an empty area to add a box the model missed");
 
             connect(addFiles, &QPushButton::clicked, this, &MainWindow::chooseFiles);
             connect(addFolder, &QPushButton::clicked, this, &MainWindow::chooseFolder);
@@ -382,20 +406,23 @@ namespace faceveil
             buttonRow->addWidget(addFolder);
             buttonRow->addWidget(clearInputs);
             buttonRow->addStretch(1);
+            buttonRow->addWidget(reviewCheck_);
             buttonRow->addWidget(recursiveCheck_);
             cardLayout->addLayout(buttonRow);
 
             root->addWidget(card);
         }
 
-        // ─── Card: Output & Options ───────────────────────────────
+        // ─── Card: Output ─────────────────────────────────────────
         {
             auto *card = makeCard(central);
             auto *cardLayout = new QVBoxLayout(card);
             cardLayout->setContentsMargins(20, 18, 20, 18);
-            cardLayout->setSpacing(14);
+            cardLayout->setSpacing(12);
 
             cardLayout->addWidget(makeSectionTitle("Output", card));
+            cardLayout->addWidget(makeSectionHint(
+                "Anonymized copies are written here, preserving folder structure.", card));
 
             auto *outputRow = new QHBoxLayout();
             outputRow->setSpacing(8);
@@ -407,45 +434,101 @@ namespace faceveil
             cardLayout->addLayout(outputRow);
             connect(outputButton, &QPushButton::clicked, this, &MainWindow::chooseOutputDirectory);
 
-            auto *separator = new QFrame(card);
-            separator->setFrameShape(QFrame::HLine);
-            separator->setStyleSheet("color: #F3F4F6; background: #F3F4F6; border: none; min-height: 1px; max-height: 1px;");
-            cardLayout->addWidget(separator);
+            root->addWidget(card);
+        }
 
-            cardLayout->addWidget(makeSectionTitle("Detection", card));
+        // ─── Card: Advanced Options (collapsible) ─────────────────
+        {
+            auto *card = makeCard(central);
+            auto *cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(20, 14, 20, 14);
+            cardLayout->setSpacing(0);
 
-            scoreThresholdSpin_ = new QDoubleSpinBox(card);
+            auto *headerRow = new QHBoxLayout();
+            headerRow->setSpacing(8);
+            headerRow->setContentsMargins(0, 0, 0, 0);
+
+            advancedToggle_ = new QToolButton(card);
+            advancedToggle_->setObjectName("advancedToggle");
+            advancedToggle_->setText("Advanced Options");
+            advancedToggle_->setCheckable(true);
+            advancedToggle_->setChecked(false);
+            advancedToggle_->setArrowType(Qt::RightArrow);
+            advancedToggle_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+            advancedToggle_->setCursor(Qt::PointingHandCursor);
+            advancedToggle_->setFocusPolicy(Qt::NoFocus);
+
+            auto *resetButton = new QPushButton("Reset to defaults", card);
+            resetButton->setCursor(Qt::PointingHandCursor);
+
+            headerRow->addWidget(advancedToggle_);
+            headerRow->addStretch(1);
+            headerRow->addWidget(resetButton);
+            cardLayout->addLayout(headerRow);
+
+            advancedBody_ = new QWidget(card);
+            auto *bodyLayout = new QVBoxLayout(advancedBody_);
+            bodyLayout->setContentsMargins(0, 14, 0, 4);
+            bodyLayout->setSpacing(12);
+
+            bodyLayout->addWidget(makeSectionHint(
+                "Tweak detection and mosaic behavior. Defaults work for most photos.",
+                advancedBody_));
+
+            scoreThresholdSpin_ = new QDoubleSpinBox(advancedBody_);
             scoreThresholdSpin_->setRange(0.05, 0.99);
             scoreThresholdSpin_->setSingleStep(0.05);
             scoreThresholdSpin_->setDecimals(2);
-            scoreThresholdSpin_->setValue(0.5);
+            scoreThresholdSpin_->setValue(kDefaultScoreThreshold);
+            scoreThresholdSpin_->setToolTip(
+                "Minimum confidence to accept a face.\n"
+                "Higher = fewer false positives but may miss small or side-profile faces.\n"
+                "Lower = catches more faces but may blur non-face regions. Default: 0.50");
 
-            nmsThresholdSpin_ = new QDoubleSpinBox(card);
+            nmsThresholdSpin_ = new QDoubleSpinBox(advancedBody_);
             nmsThresholdSpin_->setRange(0.05, 0.95);
             nmsThresholdSpin_->setSingleStep(0.05);
             nmsThresholdSpin_->setDecimals(2);
-            nmsThresholdSpin_->setValue(0.4);
+            nmsThresholdSpin_->setValue(kDefaultNmsThreshold);
+            nmsThresholdSpin_->setToolTip(
+                "Non-Maximum Suppression overlap threshold for duplicate boxes.\n"
+                "Lower = more aggressively removes overlapping detections.\n"
+                "Higher = allows more overlap. Default: 0.40");
 
-            blockSizeSpin_ = new QSpinBox(card);
+            blockSizeSpin_ = new QSpinBox(advancedBody_);
             blockSizeSpin_->setRange(2, 200);
-            blockSizeSpin_->setValue(28);
+            blockSizeSpin_->setValue(kDefaultBlockSize);
+            blockSizeSpin_->setToolTip(
+                "Mosaic block size in pixels.\n"
+                "Larger = coarser blocks, harder to un-blur.\n"
+                "Smaller = finer mosaic, higher recovery risk. Default: 28");
 
-            paddingSpin_ = new QDoubleSpinBox(card);
+            paddingSpin_ = new QDoubleSpinBox(advancedBody_);
             paddingSpin_->setRange(0.0, 1.0);
             paddingSpin_->setSingleStep(0.05);
             paddingSpin_->setDecimals(2);
-            paddingSpin_->setValue(0.18);
+            paddingSpin_->setValue(kDefaultPadding);
+            paddingSpin_->setToolTip(
+                "Extra margin around each detected face, as a fraction of its size.\n"
+                "Covers ears, hairline, and chin that the detector may miss.\n"
+                "0.00 = exact box, 0.18 = ~18% larger. Default: 0.18");
 
             auto *grid = new QFormLayout();
             grid->setLabelAlignment(Qt::AlignLeft);
             grid->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
             grid->setHorizontalSpacing(18);
             grid->setVerticalSpacing(10);
-            grid->addRow(makeFieldLabel("Score threshold", card), scoreThresholdSpin_);
-            grid->addRow(makeFieldLabel("NMS threshold", card), nmsThresholdSpin_);
-            grid->addRow(makeFieldLabel("Mosaic block size", card), blockSizeSpin_);
-            grid->addRow(makeFieldLabel("Face padding", card), paddingSpin_);
-            cardLayout->addLayout(grid);
+            grid->addRow(makeFieldLabel("Score threshold", advancedBody_), scoreThresholdSpin_);
+            grid->addRow(makeFieldLabel("NMS threshold", advancedBody_), nmsThresholdSpin_);
+            grid->addRow(makeFieldLabel("Mosaic block size", advancedBody_), blockSizeSpin_);
+            grid->addRow(makeFieldLabel("Face padding", advancedBody_), paddingSpin_);
+            bodyLayout->addLayout(grid);
+
+            advancedBody_->setVisible(false);
+            cardLayout->addWidget(advancedBody_);
+
+            connect(advancedToggle_, &QToolButton::toggled, this, &MainWindow::toggleAdvanced);
+            connect(resetButton, &QPushButton::clicked, this, &MainWindow::resetAdvancedDefaults);
 
             root->addWidget(card);
         }
@@ -627,7 +710,9 @@ namespace faceveil
                                       static_cast<float>(scoreThresholdSpin_->value()),
                                       static_cast<float>(nmsThresholdSpin_->value()),
                                       blockSizeSpin_->value(),
-                                      static_cast<float>(paddingSpin_->value()));
+                                      static_cast<float>(paddingSpin_->value()),
+                                      reviewCheck_->isChecked(),
+                                      this);
 
         worker_->moveToThread(workerThread_);
         connect(workerThread_, &QThread::started, worker_, &ProcessorWorker::process);
@@ -669,6 +754,26 @@ namespace faceveil
         workerThread_ = nullptr;
     }
 
+    void MainWindow::toggleAdvanced(bool expanded)
+    {
+        if (advancedBody_ != nullptr)
+        {
+            advancedBody_->setVisible(expanded);
+        }
+        if (advancedToggle_ != nullptr)
+        {
+            advancedToggle_->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+        }
+    }
+
+    void MainWindow::resetAdvancedDefaults() const
+    {
+        scoreThresholdSpin_->setValue(kDefaultScoreThreshold);
+        nmsThresholdSpin_->setValue(kDefaultNmsThreshold);
+        blockSizeSpin_->setValue(kDefaultBlockSize);
+        paddingSpin_->setValue(kDefaultPadding);
+    }
+
     void MainWindow::addInputPath(const QString &path) const
     {
         if (path.isEmpty())
@@ -695,6 +800,7 @@ namespace faceveil
         outputDirEdit_->setEnabled(!processing);
         inputList_->setEnabled(!processing);
         recursiveCheck_->setEnabled(!processing);
+        reviewCheck_->setEnabled(!processing);
         scoreThresholdSpin_->setEnabled(!processing);
         nmsThresholdSpin_->setEnabled(!processing);
         blockSizeSpin_->setEnabled(!processing);
@@ -758,5 +864,16 @@ namespace faceveil
     {
         const auto time = QDateTime::currentDateTime().toString("HH:mm:ss");
         logEdit_->appendPlainText(QString("[%1]  %2").arg(time, message));
+    }
+
+    ReviewResult MainWindow::requestReview(const QImage &image,
+                                           const QString &sourceName,
+                                           const QVector<QRectF> &detected,
+                                           int currentIndex,
+                                           int total)
+    {
+        ReviewDialog dialog(image, sourceName, detected, currentIndex, total, this);
+        dialog.exec();
+        return dialog.result();
     }
 } // namespace faceveil

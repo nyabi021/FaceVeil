@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 
@@ -20,7 +21,9 @@ namespace faceveil
                         float scoreThreshold,
                         float nmsThreshold,
                         int mosaicBlockSize,
-                        float paddingRatio);
+                        float paddingRatio,
+                        bool reviewEnabled,
+                        QObject *reviewReceiver);
 
     public slots:
         void process();
@@ -43,6 +46,8 @@ namespace faceveil
         float nmsThreshold_;
         int mosaicBlockSize_;
         float paddingRatio_;
+        bool reviewEnabled_;
+        QPointer<QObject> reviewReceiver_;
         std::atomic<bool> cancelled_{false};
     };
 } // namespace faceveil

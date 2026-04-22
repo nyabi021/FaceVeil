@@ -1,9 +1,13 @@
 #include "faceveil/MainWindow.hpp"
+#include "faceveil/ReviewTypes.hpp"
 
 #include <QApplication>
 #include <QFont>
+#include <QMetaType>
 #include <QPalette>
+#include <QRectF>
 #include <QStyleFactory>
+#include <QVector>
 
 namespace
 {
@@ -32,6 +36,9 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     QApplication::setStyle(QStyleFactory::create("Fusion"));
     applyLightPalette(app);
+
+    qRegisterMetaType<faceveil::ReviewResult>("faceveil::ReviewResult");
+    qRegisterMetaType<QVector<QRectF>>("QVector<QRectF>");
 
 #ifdef Q_OS_MACOS
     QFont defaultFont("SF Pro Text", 13);

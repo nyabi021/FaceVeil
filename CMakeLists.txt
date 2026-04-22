@@ -56,12 +56,15 @@ qt_add_executable(FaceVeil ${FACEVEIL_APP_OPTIONS}
     src/ImageScanner.cpp
     src/Mosaic.cpp
     src/ProcessorWorker.cpp
+    src/ReviewDialog.cpp
     src/ScrfdFaceDetector.cpp
     include/faceveil/FaceDetection.hpp
     include/faceveil/ImageScanner.hpp
     include/faceveil/MainWindow.hpp
     include/faceveil/Mosaic.hpp
     include/faceveil/ProcessorWorker.hpp
+    include/faceveil/ReviewDialog.hpp
+    include/faceveil/ReviewTypes.hpp
     include/faceveil/ScrfdFaceDetector.hpp
 )
 

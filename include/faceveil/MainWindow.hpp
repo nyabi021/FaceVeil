@@ -1,6 +1,9 @@
 #pragma once
 
+#include "faceveil/ReviewTypes.hpp"
+
 #include <QMainWindow>
+#include <QVector>
 
 class QCheckBox;
 class QComboBox;
@@ -13,6 +16,8 @@ class QProgressBar;
 class QPushButton;
 class QSpinBox;
 class QThread;
+class QToolButton;
+class QWidget;
 
 namespace faceveil
 {
@@ -26,6 +31,12 @@ namespace faceveil
         explicit MainWindow(QWidget *parent = nullptr);
 
         ~MainWindow() override;
+
+        Q_INVOKABLE faceveil::ReviewResult requestReview(const QImage &image,
+                                                         const QString &sourceName,
+                                                         const QVector<QRectF> &detected,
+                                                         int currentIndex,
+                                                         int total);
 
     protected:
         void dragEnterEvent(QDragEnterEvent *event) override;
@@ -47,6 +58,10 @@ namespace faceveil
 
         void onWorkerFinished(bool cancelled);
 
+        void toggleAdvanced(bool expanded);
+
+        void resetAdvancedDefaults() const;
+
     private:
         void addInputPath(const QString &path) const;
 
@@ -67,6 +82,7 @@ namespace faceveil
         QLineEdit *outputDirEdit_ = nullptr;
         QListWidget *inputList_ = nullptr;
         QCheckBox *recursiveCheck_ = nullptr;
+        QCheckBox *reviewCheck_ = nullptr;
         QDoubleSpinBox *scoreThresholdSpin_ = nullptr;
         QDoubleSpinBox *nmsThresholdSpin_ = nullptr;
         QSpinBox *blockSizeSpin_ = nullptr;
@@ -76,6 +92,8 @@ namespace faceveil
         QPushButton *startButton_ = nullptr;
         QPushButton *stopButton_ = nullptr;
         QLabel *statusLabel_ = nullptr;
+        QToolButton *advancedToggle_ = nullptr;
+        QWidget *advancedBody_ = nullptr;
 
         QThread *workerThread_ = nullptr;
         ProcessorWorker *worker_ = nullptr;
