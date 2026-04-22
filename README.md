@@ -1,49 +1,182 @@
 # FaceVeil
 
-FaceVeil is a macOS-first desktop app that scans image files, detects faces with an SCRFD ONNX model, and writes mosaic-protected copies to an output folder.
+![Release](https://img.shields.io/github/v/release/n4yabi12/FaceVeil?style=flat&color=6366f1)
+![Downloads](https://img.shields.io/github/downloads/n4yabi12/FaceVeil/total?style=flat&color=10b981)
+![Last Commit](https://img.shields.io/github/last-commit/n4yabi12/FaceVeil?style=flat&color=f59e0b)
+![License](https://img.shields.io/badge/app%20code-MIT-8b5cf6?style=flat)
+
+FaceVeil is a local desktop app for automatically anonymizing faces in image files. Drop in images or folders, choose a face detection model, and FaceVeil writes mosaic-protected copies to an output folder without overwriting the originals.
+
+FaceVeil currently supports macOS and is being prepared for Windows distribution.
+
+## Features
+
+- Batch scan images and folders
+- Optional recursive folder scanning
+- Local SCRFD ONNX face detection
+- Fast and accurate model presets
+- Adjustable score threshold, NMS threshold, face padding, and mosaic strength
+- Original files are preserved
+- Processed copies are written to a user-selected output folder
+- No cloud upload or network processing
+
+## Model Presets
+
+FaceVeil looks for these bundled SCRFD ONNX models:
+
+- `2.5g_bnkps.onnx` as `Fast - SCRFD 2.5G`
+- `10g_bnkps.onnx` as `Accurate - SCRFD 10G`
+
+You can also select a custom ONNX model from the app with `Model...`.
+
+The app expects an SCRFD-style output layout:
+
+- score tensors for strides 8, 16, and 32
+- bbox distance tensors for strides 8, 16, and 32
+- optional 5-point landmark tensors
+
+## Supported Images
+
+FaceVeil currently scans:
+
+- `.jpg`
+- `.jpeg`
+- `.png`
+- `.bmp`
+- `.tif`
+- `.tiff`
+- `.webp`
+
+HEIC support depends on the local OpenCV build and is not enabled by default.
 
 ## Requirements
 
-- macOS
+### macOS
+
+- macOS on Apple Silicon for the current packaged build
 - CMake 3.24+
 - Qt 6
 - OpenCV 4
 - ONNX Runtime
+- Homebrew `pkg-config` support for `libonnxruntime`
 
-The current Homebrew-friendly setup expects `pkg-config` to find `libonnxruntime`.
+### Windows
+
+- Windows 10 or later recommended
+- CMake 3.24+
+- Visual Studio 2022 Build Tools or a compatible MSVC environment
+- Qt 6 MSVC kit
+- OpenCV 4 Windows build
+- ONNX Runtime Windows package
 
 ## Build
+
+### macOS
 
 ```bash
 cmake -S . -B build -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
 cmake --build build
-```
-
-Run:
-
-```bash
 open build/FaceVeil.app
 ```
 
-Or directly:
+### Windows
 
-```bash
-./build/FaceVeil.app/Contents/MacOS/FaceVeil
+PowerShell example:
+
+```powershell
+cmake -S . -B build-windows -G Ninja `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_PREFIX_PATH="C:\Qt\6.11.0\msvc2022_64;C:\opencv\build" `
+  -DONNXRUNTIME_ROOT="C:\onnxruntime-win-x64-1.24.4"
+
+cmake --build build-windows --config Release
 ```
 
-## Model
+## Package
 
-Download an SCRFD ONNX face detector yourself and select it in the app. A practical default is an SCRFD 2.5G or 10G model exported to ONNX. Place it under `models/` if you want to keep project assets together.
+### macOS
 
-The app expects an SCRFD-style output layout:
+```bash
+./scripts/package_macos.sh
+```
 
-- score tensors for strides 8, 16, 32
-- bbox distance tensors for strides 8, 16, 32
-- optional 5-point landmark tensors
+Output:
 
-## Notes
+```text
+dist/macos/FaceVeil.app
+```
 
-- Original images are not overwritten. Processed copies are written to the chosen output folder.
-- Increase `Mosaic block size` for stronger anonymization. The UI allows values up to `200`.
-- Supported input extensions are `jpg`, `jpeg`, `png`, `bmp`, `tif`, `tiff`, and `webp`.
-- HEIC support depends on the local OpenCV build and is not enabled by default here.
+The macOS package copies Qt, OpenCV, ONNX Runtime, and local ONNX files from `models/` into the app bundle.
+
+For public distribution, sign the app with an Apple Developer ID certificate and notarize it with Apple. The local packaging script only performs ad-hoc signing for development and testing.
+
+### Windows
+
+Run from PowerShell on Windows:
+
+```powershell
+.\scripts\package_windows.ps1 `
+  -QtRoot "C:\Qt\6.11.0\msvc2022_64" `
+  -OpenCvRoot "C:\opencv\build" `
+  -OnnxRuntimeRoot "C:\onnxruntime-win-x64-1.24.4"
+```
+
+Output:
+
+```text
+dist/windows/FaceVeil
+```
+
+The Windows package copies the executable, Qt runtime files, OpenCV DLLs, ONNX Runtime DLL, and local ONNX files from `models/`.
+
+## Repository Layout
+
+```text
+FaceVeil/
+  include/faceveil/      Public C++ headers
+  src/                   App and processing implementation
+  scripts/               Packaging scripts
+  tools/                 Developer utilities
+  models/                Local ONNX model files, ignored by Git
+```
+
+## Privacy
+
+FaceVeil is designed for local processing. Images are read from disk, processed locally, and written to the selected output directory. The app does not upload images or model inputs to a server.
+
+## Important Limitations
+
+Face detection is probabilistic. Small faces, side profiles, heavy occlusion, motion blur, extreme lighting, or unusual crops may cause missed detections. Review output images before publishing or sharing them.
+
+## License
+
+FaceVeil application source code is licensed under the MIT License. See [LICENSE](LICENSE).
+
+SPDX identifier: `MIT`
+
+Copyright (c) 2026 Nyabi
+
+Third-party dependencies keep their own licenses, including Qt, OpenCV, and ONNX Runtime.
+
+The bundled SCRFD/InsightFace model files are not covered by FaceVeil's application license. The InsightFace project states that its provided pretrained models are available for non-commercial research purposes only. If you plan to distribute FaceVeil commercially or bundle these models in a public release, verify the model license and obtain any required commercial rights from the model owner.
+
+References:
+
+- [InsightFace GitHub license notice](https://github.com/deepinsight/insightface)
+- [InsightFace Model Zoo](https://github.com/deepinsight/insightface/blob/master/model_zoo/README.md)
+- [SCRFD project page](https://insightface.ai/scrfd)
+
+## Citation
+
+FaceVeil uses SCRFD-style face detection models. If you use SCRFD in research, cite the original paper:
+
+```bibtex
+@misc{guo2021sample,
+  title={Sample and Computation Redistribution for Efficient Face Detection},
+  author={Jia Guo and Jiankang Deng and Alexandros Lattas and Stefanos Zafeiriou},
+  year={2021},
+  eprint={2105.04714},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV}
+}
+```

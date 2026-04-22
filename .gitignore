@@ -1,5 +1,9 @@
 build/
+build-windows/
+build-release/
+dist/
 *.user
 *.DS_Store
 models/*.onnx
 output/
+.idea/

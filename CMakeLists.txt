@@ -12,10 +12,45 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 find_package(OpenCV REQUIRED COMPONENTS core imgcodecs imgproc)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(ONNXRUNTIME REQUIRED IMPORTED_TARGET libonnxruntime)
 
-qt_add_executable(FaceVeil MACOSX_BUNDLE
+if(WIN32)
+    set(ONNXRUNTIME_ROOT "" CACHE PATH "Path to the ONNX Runtime package root")
+    find_path(ONNXRUNTIME_INCLUDE_DIR
+        NAMES onnxruntime_cxx_api.h
+        HINTS
+            "${ONNXRUNTIME_ROOT}/include"
+            "$ENV{ONNXRUNTIME_ROOT}/include"
+    )
+    find_library(ONNXRUNTIME_LIBRARY
+        NAMES onnxruntime
+        HINTS
+            "${ONNXRUNTIME_ROOT}/lib"
+            "$ENV{ONNXRUNTIME_ROOT}/lib"
+    )
+
+    if(NOT ONNXRUNTIME_INCLUDE_DIR OR NOT ONNXRUNTIME_LIBRARY)
+        message(FATAL_ERROR "ONNX Runtime was not found. Configure with -DONNXRUNTIME_ROOT=C:/path/to/onnxruntime-win-x64")
+    endif()
+
+    add_library(onnxruntime::onnxruntime UNKNOWN IMPORTED)
+    set_target_properties(onnxruntime::onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${ONNXRUNTIME_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${ONNXRUNTIME_INCLUDE_DIR}"
+    )
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(ONNXRUNTIME REQUIRED IMPORTED_TARGET libonnxruntime)
+    add_library(onnxruntime::onnxruntime ALIAS PkgConfig::ONNXRUNTIME)
+endif()
+
+set(FACEVEIL_APP_OPTIONS)
+if(APPLE)
+    list(APPEND FACEVEIL_APP_OPTIONS MACOSX_BUNDLE)
+elseif(WIN32)
+    list(APPEND FACEVEIL_APP_OPTIONS WIN32)
+endif()
+
+qt_add_executable(FaceVeil ${FACEVEIL_APP_OPTIONS}
     src/main.cpp
     src/MainWindow.cpp
     src/ImageScanner.cpp
@@ -34,15 +69,17 @@ target_include_directories(FaceVeil PRIVATE include)
 target_link_libraries(FaceVeil PRIVATE
     Qt6::Widgets
     ${OpenCV_LIBS}
-    PkgConfig::ONNXRUNTIME
+    onnxruntime::onnxruntime
 )
 
-set_target_properties(FaceVeil PROPERTIES
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.faceveil.app"
-    MACOSX_BUNDLE_BUNDLE_NAME "FaceVeil"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-)
+if(APPLE)
+    set_target_properties(FaceVeil PROPERTIES
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.faceveil.app"
+        MACOSX_BUNDLE_BUNDLE_NAME "FaceVeil"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    )
+endif()
 
 install(TARGETS FaceVeil
     BUNDLE DESTINATION .
@@ -53,4 +90,4 @@ add_executable(faceveil_inspect_model
     tools/inspect_model.cpp
 )
 
-target_link_libraries(faceveil_inspect_model PRIVATE PkgConfig::ONNXRUNTIME)
+target_link_libraries(faceveil_inspect_model PRIVATE onnxruntime::onnxruntime)

@@ -3,6 +3,7 @@
 #include "faceveil/ProcessorWorker.hpp"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -20,6 +21,7 @@
 #include <QUrl>
 #include <QWidget>
 
+#include <array>
 #include <memory>
 
 namespace faceveil
@@ -42,6 +44,28 @@ namespace faceveil
             button->setMinimumWidth(96);
             return button;
         }
+
+        QString firstExistingModelPath(const QString &fileName)
+        {
+            const auto appDir = QCoreApplication::applicationDirPath();
+            const std::array<QString, 4> candidates = {
+                appDir + "/models/" + fileName,
+                appDir + "/../Resources/models/" + fileName,
+                appDir + "/../../../../models/" + fileName,
+                QDir::currentPath() + "/models/" + fileName,
+            };
+
+            for (const auto &candidate: candidates)
+            {
+                const QFileInfo info(QDir::cleanPath(candidate));
+                if (info.exists() && info.isFile())
+                {
+                    return info.absoluteFilePath();
+                }
+            }
+
+            return {};
+        }
     } // namespace
 
     MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
@@ -58,12 +82,22 @@ namespace faceveil
         root->setSpacing(14);
         centralWidget->setLayout(rootLayout.release());
 
-        auto modelRowLayout = std::make_unique<QHBoxLayout>();
-        auto *modelRow = modelRowLayout.get();
+        modelCombo_ = new QComboBox(this);
         modelPathEdit_ = new QLineEdit(this);
-        modelPathEdit_->setPlaceholderText("Select SCRFD ONNX model");
+        modelPathEdit_->setReadOnly(true);
+        modelPathEdit_->setPlaceholderText("Bundled SCRFD model path");
         auto modelButton = smallButton("Model...");
         connect(modelButton.get(), &QPushButton::clicked, this, &MainWindow::chooseModel);
+        connect(modelCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::updateModelPathFromSelection);
+
+        auto modelChoiceRowLayout = std::make_unique<QHBoxLayout>();
+        auto *modelChoiceRow = modelChoiceRowLayout.get();
+        modelChoiceRow->addWidget(new QLabel("Face model", this));
+        modelChoiceRow->addWidget(modelCombo_, 1);
+        root->addLayout(modelChoiceRowLayout.release());
+
+        auto modelRowLayout = std::make_unique<QHBoxLayout>();
+        auto *modelRow = modelRowLayout.get();
         modelRow->addWidget(modelPathEdit_);
         modelRow->addWidget(modelButton.release());
         root->addLayout(modelRowLayout.release());
@@ -153,7 +187,8 @@ namespace faceveil
         root->addLayout(actionRowLayout.release());
 
         setCentralWidget(central.release());
-        appendLog("Drop images or folders here, then choose an SCRFD ONNX model.");
+        populateBundledModels();
+        appendLog("Drop images or folders here, then choose a model speed/quality mode.");
     }
 
     MainWindow::~MainWindow()
@@ -192,6 +227,9 @@ namespace faceveil
                                                        "ONNX Models (*.onnx)");
         if (!path.isEmpty())
         {
+            const QFileInfo info(path);
+            modelCombo_->addItem("Custom - " + info.fileName(), info.absoluteFilePath());
+            modelCombo_->setCurrentIndex(modelCombo_->count() - 1);
             modelPathEdit_->setText(path);
         }
     }
@@ -231,7 +269,8 @@ namespace faceveil
 
     void MainWindow::startProcessing()
     {
-        if (modelPathEdit_->text().isEmpty() || !QFileInfo::exists(modelPathEdit_->text()))
+        const auto modelPath = selectedModelPath();
+        if (modelPath.isEmpty() || !QFileInfo::exists(modelPath))
         {
             appendLog("Choose a valid SCRFD ONNX model first.");
             return;
@@ -253,7 +292,7 @@ namespace faceveil
         progressBar_->setValue(0);
 
         workerThread_ = new QThread(this);
-        worker_ = new ProcessorWorker(modelPathEdit_->text(),
+        worker_ = new ProcessorWorker(modelPath,
                                       inputPaths(),
                                       outputDirEdit_->text(),
                                       recursiveCheck_->isChecked(),
@@ -317,6 +356,7 @@ namespace faceveil
     {
         startButton_->setEnabled(!processing);
         stopButton_->setEnabled(processing);
+        modelCombo_->setEnabled(!processing);
         modelPathEdit_->setEnabled(!processing);
         outputDirEdit_->setEnabled(!processing);
         inputList_->setEnabled(!processing);
@@ -335,6 +375,49 @@ namespace faceveil
             paths.append(inputList_->item(i)->text());
         }
         return paths;
+    }
+
+    void MainWindow::populateBundledModels() const
+    {
+        struct ModelOption
+        {
+            QString label;
+            QString fileName;
+        };
+
+        const std::array<ModelOption, 2> options = {
+            ModelOption{"Fast - SCRFD 2.5G", "2.5g_bnkps.onnx"},
+            ModelOption{"Accurate - SCRFD 10G", "10g_bnkps.onnx"},
+        };
+
+        for (const auto &option: options)
+        {
+            const auto path = firstExistingModelPath(option.fileName);
+            modelCombo_->addItem(option.label, path);
+        }
+
+        modelCombo_->setCurrentIndex(0);
+        updateModelPathFromSelection();
+
+        if (selectedModelPath().isEmpty())
+        {
+            appendLog("Bundled models were not found. Use Model... to select an ONNX file.");
+        }
+    }
+
+    void MainWindow::updateModelPathFromSelection() const
+    {
+        modelPathEdit_->setText(selectedModelPath());
+    }
+
+    QString MainWindow::selectedModelPath() const
+    {
+        if (modelCombo_ == nullptr || modelCombo_->currentIndex() < 0)
+        {
+            return {};
+        }
+
+        return modelCombo_->currentData().toString();
     }
 
     void MainWindow::appendLog(const QString &message) const

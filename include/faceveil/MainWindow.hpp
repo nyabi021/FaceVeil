@@ -3,6 +3,7 @@
 #include <QMainWindow>
 
 class QCheckBox;
+class QComboBox;
 class QDoubleSpinBox;
 class QLineEdit;
 class QListWidget;
@@ -48,12 +49,19 @@ namespace faceveil
     private:
         void addInputPath(const QString &path) const;
 
+        void populateBundledModels() const;
+
+        void updateModelPathFromSelection() const;
+
+        [[nodiscard]] QString selectedModelPath() const;
+
         void setProcessing(bool processing) const;
 
         [[nodiscard]] QStringList inputPaths() const;
 
         void appendLog(const QString &message) const;
 
+        QComboBox *modelCombo_ = nullptr;
         QLineEdit *modelPathEdit_ = nullptr;
         QLineEdit *outputDirEdit_ = nullptr;
         QListWidget *inputList_ = nullptr;
