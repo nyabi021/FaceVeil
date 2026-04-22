@@ -34,7 +34,7 @@ namespace faceveil
 
     void ProcessorWorker::process()
     {
-        cancelled_ = false;
+        cancelled_.store(false, std::memory_order_relaxed);
 
         try
         {
@@ -56,17 +56,38 @@ namespace faceveil
             const auto outputRoot = std::filesystem::path(outputDirectory_.toStdString());
             std::filesystem::create_directories(outputRoot);
 
+            std::error_code canonicalError;
+            const auto canonicalRoot = std::filesystem::weakly_canonical(outputRoot, canonicalError);
+            const auto safeRoot = canonicalError ? outputRoot : canonicalRoot;
+
             int completed = 0;
             for (const auto &item: images)
             {
-                if (cancelled_)
+                if (cancelled_.load(std::memory_order_acquire))
                 {
                     emit finished(true);
                     return;
                 }
 
                 const auto source = item.sourcePath;
-                const auto destination = outputRoot / item.relativePath;
+                const auto destination = safeRoot / item.relativePath;
+
+                std::error_code destError;
+                const auto canonicalDestination = std::filesystem::weakly_canonical(destination, destError);
+                const auto relativeFromRoot = destError
+                    ? std::filesystem::path{}
+                    : std::filesystem::relative(canonicalDestination, safeRoot, destError);
+                const bool escaped = destError || relativeFromRoot.empty() ||
+                    relativeFromRoot.begin()->string() == "..";
+                if (escaped)
+                {
+                    emit logMessage(
+                        QString("Skipped unsafe output path for: %1").arg(
+                            QString::fromStdString(source.filename().string())));
+                    emit progressChanged(++completed, total);
+                    continue;
+                }
+
                 std::filesystem::create_directories(destination.parent_path());
 
                 cv::Mat image = cv::imread(source.string(), cv::IMREAD_COLOR);
@@ -99,12 +120,12 @@ namespace faceveil
         } catch (const std::exception &exception)
         {
             emit logMessage(QString("Error: %1").arg(exception.what()));
-            emit finished(cancelled_);
+            emit finished(cancelled_.load(std::memory_order_acquire));
         }
     }
 
     void ProcessorWorker::cancel()
     {
-        cancelled_ = true;
+        cancelled_.store(true, std::memory_order_release);
     }
 } // namespace faceveil

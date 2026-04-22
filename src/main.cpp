@@ -1,10 +1,48 @@
 #include "faceveil/MainWindow.hpp"
 
 #include <QApplication>
+#include <QFont>
+#include <QPalette>
+#include <QStyleFactory>
+
+namespace
+{
+    void applyLightPalette(QApplication &app)
+    {
+        QPalette palette;
+        palette.setColor(QPalette::Window, QColor("#F7F8FA"));
+        palette.setColor(QPalette::WindowText, QColor("#111827"));
+        palette.setColor(QPalette::Base, QColor("#FFFFFF"));
+        palette.setColor(QPalette::AlternateBase, QColor("#F3F4F6"));
+        palette.setColor(QPalette::Text, QColor("#111827"));
+        palette.setColor(QPalette::Button, QColor("#FFFFFF"));
+        palette.setColor(QPalette::ButtonText, QColor("#111827"));
+        palette.setColor(QPalette::Highlight, QColor("#111827"));
+        palette.setColor(QPalette::HighlightedText, QColor("#FFFFFF"));
+        palette.setColor(QPalette::PlaceholderText, QColor("#9CA3AF"));
+        palette.setColor(QPalette::Disabled, QPalette::Text, QColor("#9CA3AF"));
+        palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#9CA3AF"));
+        palette.setColor(QPalette::Disabled, QPalette::WindowText, QColor("#9CA3AF"));
+        app.setPalette(palette);
+    }
+} // namespace
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    QApplication::setStyle(QStyleFactory::create("Fusion"));
+    applyLightPalette(app);
+
+#ifdef Q_OS_MACOS
+    QFont defaultFont("SF Pro Text", 13);
+#elif defined(Q_OS_WIN)
+    QFont defaultFont("Segoe UI", 10);
+#else
+    QFont defaultFont;
+    defaultFont.setPointSize(10);
+#endif
+    app.setFont(defaultFont);
+
     faceveil::MainWindow window;
     window.show();
     return QApplication::exec();

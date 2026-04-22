@@ -4,6 +4,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <atomic>
+
 namespace faceveil
 {
     class ProcessorWorker final : public QObject
@@ -41,6 +43,6 @@ namespace faceveil
         float nmsThreshold_;
         int mosaicBlockSize_;
         float paddingRatio_;
-        bool cancelled_ = false;
+        std::atomic<bool> cancelled_{false};
     };
 } // namespace faceveil

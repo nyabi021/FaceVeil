@@ -19,6 +19,18 @@ namespace faceveil
             return extension;
         }
 
+        bool escapesBase(const std::filesystem::path &relative)
+        {
+            for (const auto &part: relative)
+            {
+                if (part == "..")
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         void appendFile(std::vector<ScanResult> &results,
                         const std::filesystem::path &file,
                         const std::filesystem::path &base)
@@ -30,7 +42,7 @@ namespace faceveil
 
             std::error_code error;
             auto relative = std::filesystem::relative(file, base, error);
-            if (error)
+            if (error || relative.empty() || relative.is_absolute() || escapesBase(relative))
             {
                 relative = file.filename();
             }

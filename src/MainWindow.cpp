@@ -4,9 +4,12 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
+#include <QDebug>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -15,10 +18,13 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QStandardPaths>
+#include <QStatusBar>
 #include <QThread>
 #include <QUrl>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <array>
@@ -28,6 +34,184 @@ namespace faceveil
 {
     namespace
     {
+        constexpr const char *kStyleSheet = R"(
+            QWidget {
+                color: #111827;
+                font-size: 13px;
+            }
+            QMainWindow, #rootScroll, #rootScroll > QWidget > QWidget {
+                background-color: #F7F8FA;
+            }
+            QLabel#titleLabel {
+                font-size: 22px;
+                font-weight: 600;
+                color: #111827;
+            }
+            QLabel#subtitleLabel {
+                font-size: 12px;
+                color: #6B7280;
+            }
+            QLabel[role="sectionTitle"] {
+                font-size: 13px;
+                font-weight: 600;
+                color: #111827;
+                letter-spacing: 0.2px;
+            }
+            QLabel[role="sectionHint"] {
+                font-size: 12px;
+                color: #6B7280;
+            }
+            QLabel[role="fieldLabel"] {
+                font-size: 12px;
+                color: #4B5563;
+            }
+            QFrame#card {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 12px;
+            }
+            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 6px 10px;
+                min-height: 20px;
+                selection-background-color: #111827;
+                selection-color: #FFFFFF;
+            }
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+                border: 1px solid #111827;
+            }
+            QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
+                background-color: #F3F4F6;
+                color: #9CA3AF;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 22px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid #6B7280;
+                margin-right: 10px;
+            }
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 7px 14px;
+                color: #111827;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #F3F4F6;
+                border-color: #D1D5DB;
+            }
+            QPushButton:pressed {
+                background-color: #E5E7EB;
+            }
+            QPushButton:disabled {
+                color: #9CA3AF;
+                background-color: #F9FAFB;
+                border-color: #E5E7EB;
+            }
+            QPushButton#primaryButton {
+                background-color: #111827;
+                color: #FFFFFF;
+                border: 1px solid #111827;
+                padding: 9px 20px;
+                font-weight: 600;
+            }
+            QPushButton#primaryButton:hover {
+                background-color: #1F2937;
+            }
+            QPushButton#primaryButton:pressed {
+                background-color: #000000;
+            }
+            QPushButton#primaryButton:disabled {
+                background-color: #9CA3AF;
+                border-color: #9CA3AF;
+                color: #FFFFFF;
+            }
+            QPushButton#dangerButton {
+                background-color: #FFFFFF;
+                color: #DC2626;
+                border: 1px solid #FECACA;
+            }
+            QPushButton#dangerButton:hover {
+                background-color: #FEF2F2;
+            }
+            QPushButton#dangerButton:disabled {
+                color: #9CA3AF;
+                border-color: #E5E7EB;
+            }
+            QListWidget, QPlainTextEdit {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QListWidget::item {
+                padding: 6px 8px;
+                border-radius: 4px;
+            }
+            QListWidget::item:selected {
+                background-color: #F3F4F6;
+                color: #111827;
+            }
+            QPlainTextEdit {
+                font-family: "SF Mono", "Menlo", "Consolas", monospace;
+                font-size: 12px;
+                color: #374151;
+            }
+            QCheckBox {
+                spacing: 8px;
+                color: #111827;
+            }
+            QProgressBar {
+                background-color: #F3F4F6;
+                border: none;
+                border-radius: 4px;
+                height: 8px;
+                text-align: center;
+                color: transparent;
+            }
+            QProgressBar::chunk {
+                background-color: #111827;
+                border-radius: 4px;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D1D5DB;
+                border-radius: 4px;
+                min-height: 24px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #9CA3AF;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+            QScrollArea {
+                border: none;
+                background: transparent;
+            }
+            QWidget#bottomBar {
+                background-color: #FFFFFF;
+                border-top: 1px solid #E5E7EB;
+            }
+            QLabel#statusLabel {
+                color: #6B7280;
+                font-size: 12px;
+            }
+        )";
+
         QString defaultOutputDirectory()
         {
             const auto pictures = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
@@ -36,13 +220,6 @@ namespace faceveil
                 return pictures + "/FaceVeil";
             }
             return QDir::homePath() + "/FaceVeil";
-        }
-
-        std::unique_ptr<QPushButton> smallButton(const QString &label)
-        {
-            auto button = std::make_unique<QPushButton>(label);
-            button->setMinimumWidth(96);
-            return button;
         }
 
         QString firstExistingModelPath(const QString &fileName)
@@ -66,129 +243,273 @@ namespace faceveil
 
             return {};
         }
+
+        QLabel *makeSectionTitle(const QString &text, QWidget *parent)
+        {
+            auto *label = new QLabel(text, parent);
+            label->setProperty("role", "sectionTitle");
+            return label;
+        }
+
+        QLabel *makeSectionHint(const QString &text, QWidget *parent)
+        {
+            auto *label = new QLabel(text, parent);
+            label->setProperty("role", "sectionHint");
+            label->setWordWrap(true);
+            return label;
+        }
+
+        QLabel *makeFieldLabel(const QString &text, QWidget *parent)
+        {
+            auto *label = new QLabel(text, parent);
+            label->setProperty("role", "fieldLabel");
+            return label;
+        }
+
+        QFrame *makeCard(QWidget *parent)
+        {
+            auto *card = new QFrame(parent);
+            card->setObjectName("card");
+            card->setFrameShape(QFrame::NoFrame);
+            return card;
+        }
     } // namespace
 
     MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     {
         setWindowTitle("FaceVeil");
         setAcceptDrops(true);
-        resize(880, 680);
+        resize(920, 760);
+        setMinimumSize(720, 600);
+        setStyleSheet(kStyleSheet);
 
-        auto central = std::make_unique<QWidget>(this);
-        auto rootLayout = std::make_unique<QVBoxLayout>();
-        auto *centralWidget = central.get();
-        auto *root = rootLayout.get();
-        root->setContentsMargins(18, 18, 18, 18);
-        root->setSpacing(14);
-        centralWidget->setLayout(rootLayout.release());
+        auto *container = new QWidget(this);
+        auto *containerLayout = new QVBoxLayout(container);
+        containerLayout->setContentsMargins(0, 0, 0, 0);
+        containerLayout->setSpacing(0);
 
-        modelCombo_ = new QComboBox(this);
-        modelPathEdit_ = new QLineEdit(this);
-        modelPathEdit_->setReadOnly(true);
-        modelPathEdit_->setPlaceholderText("Bundled SCRFD model path");
-        auto modelButton = smallButton("Model...");
-        connect(modelButton.get(), &QPushButton::clicked, this, &MainWindow::chooseModel);
-        connect(modelCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::updateModelPathFromSelection);
+        auto *scrollArea = new QScrollArea(container);
+        scrollArea->setObjectName("rootScroll");
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        scrollArea->setFrameShape(QFrame::NoFrame);
 
-        auto modelChoiceRowLayout = std::make_unique<QHBoxLayout>();
-        auto *modelChoiceRow = modelChoiceRowLayout.get();
-        modelChoiceRow->addWidget(new QLabel("Face model", this));
-        modelChoiceRow->addWidget(modelCombo_, 1);
-        root->addLayout(modelChoiceRowLayout.release());
+        auto *central = new QWidget(scrollArea);
+        auto *root = new QVBoxLayout(central);
+        root->setContentsMargins(32, 28, 32, 28);
+        root->setSpacing(20);
 
-        auto modelRowLayout = std::make_unique<QHBoxLayout>();
-        auto *modelRow = modelRowLayout.get();
-        modelRow->addWidget(modelPathEdit_);
-        modelRow->addWidget(modelButton.release());
-        root->addLayout(modelRowLayout.release());
+        // ─── Header ───────────────────────────────────────────────
+        auto *header = new QWidget(central);
+        auto *headerLayout = new QVBoxLayout(header);
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+        headerLayout->setSpacing(4);
 
-        inputList_ = new QListWidget(this);
-        inputList_->setSelectionMode(QAbstractItemView::ExtendedSelection);
-        inputList_->setMinimumHeight(150);
-        inputList_->setAlternatingRowColors(true);
-        root->addWidget(new QLabel("Inputs", this));
-        root->addWidget(inputList_);
+        auto *title = new QLabel("FaceVeil", header);
+        title->setObjectName("titleLabel");
+        auto *subtitle = new QLabel("Local, private face anonymization for photos", header);
+        subtitle->setObjectName("subtitleLabel");
+        headerLayout->addWidget(title);
+        headerLayout->addWidget(subtitle);
+        root->addWidget(header);
 
-        auto inputButtonsLayout = std::make_unique<QHBoxLayout>();
-        auto *inputButtons = inputButtonsLayout.get();
-        auto addFilesButton = smallButton("Add Images...");
-        auto addFolderButton = smallButton("Add Folder...");
-        auto clearButton = smallButton("Clear");
-        connect(addFilesButton.get(), &QPushButton::clicked, this, &MainWindow::chooseFiles);
-        connect(addFolderButton.get(), &QPushButton::clicked, this, &MainWindow::chooseFolder);
-        connect(clearButton.get(), &QPushButton::clicked, inputList_, &QListWidget::clear);
-        inputButtons->addWidget(addFilesButton.release());
-        inputButtons->addWidget(addFolderButton.release());
-        inputButtons->addWidget(clearButton.release());
-        inputButtons->addStretch();
-        root->addLayout(inputButtonsLayout.release());
+        // ─── Card: Model ──────────────────────────────────────────
+        {
+            auto *card = makeCard(central);
+            auto *cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(20, 18, 20, 18);
+            cardLayout->setSpacing(12);
 
-        auto outputRowLayout = std::make_unique<QHBoxLayout>();
-        auto *outputRow = outputRowLayout.get();
-        outputDirEdit_ = new QLineEdit(defaultOutputDirectory(), this);
-        auto outputButton = smallButton("Output...");
-        connect(outputButton.get(), &QPushButton::clicked, this, &MainWindow::chooseOutputDirectory);
-        outputRow->addWidget(outputDirEdit_);
-        outputRow->addWidget(outputButton.release());
-        root->addLayout(outputRowLayout.release());
+            cardLayout->addWidget(makeSectionTitle("Model", card));
+            cardLayout->addWidget(makeSectionHint(
+                "Choose speed vs. accuracy, or load a custom SCRFD ONNX file.", card));
 
-        auto optionsLayout = std::make_unique<QFormLayout>();
-        auto *options = optionsLayout.get();
-        recursiveCheck_ = new QCheckBox("Include subfolders", this);
-        recursiveCheck_->setChecked(true);
+            modelCombo_ = new QComboBox(card);
+            modelCombo_->setMinimumHeight(34);
+            cardLayout->addWidget(modelCombo_);
 
-        scoreThresholdSpin_ = new QDoubleSpinBox(this);
-        scoreThresholdSpin_->setRange(0.05, 0.99);
-        scoreThresholdSpin_->setSingleStep(0.05);
-        scoreThresholdSpin_->setValue(0.5);
+            auto *pathRow = new QHBoxLayout();
+            pathRow->setSpacing(8);
+            modelPathEdit_ = new QLineEdit(card);
+            modelPathEdit_->setReadOnly(true);
+            modelPathEdit_->setPlaceholderText("Bundled SCRFD model path");
+            auto *modelButton = new QPushButton("Browse…", card);
+            modelButton->setCursor(Qt::PointingHandCursor);
+            pathRow->addWidget(modelPathEdit_, 1);
+            pathRow->addWidget(modelButton);
+            cardLayout->addLayout(pathRow);
 
-        nmsThresholdSpin_ = new QDoubleSpinBox(this);
-        nmsThresholdSpin_->setRange(0.05, 0.95);
-        nmsThresholdSpin_->setSingleStep(0.05);
-        nmsThresholdSpin_->setValue(0.4);
+            connect(modelButton, &QPushButton::clicked, this, &MainWindow::chooseModel);
+            connect(modelCombo_, &QComboBox::currentIndexChanged,
+                    this, &MainWindow::updateModelPathFromSelection);
 
-        blockSizeSpin_ = new QSpinBox(this);
-        blockSizeSpin_->setRange(2, 200);
-        blockSizeSpin_->setValue(28);
+            root->addWidget(card);
+        }
 
-        paddingSpin_ = new QDoubleSpinBox(this);
-        paddingSpin_->setRange(0.0, 1.0);
-        paddingSpin_->setSingleStep(0.05);
-        paddingSpin_->setValue(0.18);
+        // ─── Card: Inputs ─────────────────────────────────────────
+        {
+            auto *card = makeCard(central);
+            auto *cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(20, 18, 20, 18);
+            cardLayout->setSpacing(12);
 
-        options->addRow("", recursiveCheck_);
-        options->addRow("Score threshold", scoreThresholdSpin_);
-        options->addRow("NMS threshold", nmsThresholdSpin_);
-        options->addRow("Mosaic block size", blockSizeSpin_);
-        options->addRow("Face padding", paddingSpin_);
-        root->addLayout(optionsLayout.release());
+            cardLayout->addWidget(makeSectionTitle("Inputs", card));
+            cardLayout->addWidget(makeSectionHint(
+                "Drag images or folders here, or use the buttons below.", card));
 
-        progressBar_ = new QProgressBar(this);
+            inputList_ = new QListWidget(card);
+            inputList_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+            inputList_->setMinimumHeight(140);
+            inputList_->setAlternatingRowColors(false);
+            cardLayout->addWidget(inputList_);
+
+            auto *buttonRow = new QHBoxLayout();
+            buttonRow->setSpacing(8);
+            auto *addFiles = new QPushButton("Add Images", card);
+            auto *addFolder = new QPushButton("Add Folder", card);
+            auto *clearInputs = new QPushButton("Clear", card);
+            addFiles->setCursor(Qt::PointingHandCursor);
+            addFolder->setCursor(Qt::PointingHandCursor);
+            clearInputs->setCursor(Qt::PointingHandCursor);
+            recursiveCheck_ = new QCheckBox("Include subfolders", card);
+            recursiveCheck_->setChecked(true);
+
+            connect(addFiles, &QPushButton::clicked, this, &MainWindow::chooseFiles);
+            connect(addFolder, &QPushButton::clicked, this, &MainWindow::chooseFolder);
+            connect(clearInputs, &QPushButton::clicked, inputList_, &QListWidget::clear);
+
+            buttonRow->addWidget(addFiles);
+            buttonRow->addWidget(addFolder);
+            buttonRow->addWidget(clearInputs);
+            buttonRow->addStretch(1);
+            buttonRow->addWidget(recursiveCheck_);
+            cardLayout->addLayout(buttonRow);
+
+            root->addWidget(card);
+        }
+
+        // ─── Card: Output & Options ───────────────────────────────
+        {
+            auto *card = makeCard(central);
+            auto *cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(20, 18, 20, 18);
+            cardLayout->setSpacing(14);
+
+            cardLayout->addWidget(makeSectionTitle("Output", card));
+
+            auto *outputRow = new QHBoxLayout();
+            outputRow->setSpacing(8);
+            outputDirEdit_ = new QLineEdit(defaultOutputDirectory(), card);
+            auto *outputButton = new QPushButton("Choose…", card);
+            outputButton->setCursor(Qt::PointingHandCursor);
+            outputRow->addWidget(outputDirEdit_, 1);
+            outputRow->addWidget(outputButton);
+            cardLayout->addLayout(outputRow);
+            connect(outputButton, &QPushButton::clicked, this, &MainWindow::chooseOutputDirectory);
+
+            auto *separator = new QFrame(card);
+            separator->setFrameShape(QFrame::HLine);
+            separator->setStyleSheet("color: #F3F4F6; background: #F3F4F6; border: none; min-height: 1px; max-height: 1px;");
+            cardLayout->addWidget(separator);
+
+            cardLayout->addWidget(makeSectionTitle("Detection", card));
+
+            scoreThresholdSpin_ = new QDoubleSpinBox(card);
+            scoreThresholdSpin_->setRange(0.05, 0.99);
+            scoreThresholdSpin_->setSingleStep(0.05);
+            scoreThresholdSpin_->setDecimals(2);
+            scoreThresholdSpin_->setValue(0.5);
+
+            nmsThresholdSpin_ = new QDoubleSpinBox(card);
+            nmsThresholdSpin_->setRange(0.05, 0.95);
+            nmsThresholdSpin_->setSingleStep(0.05);
+            nmsThresholdSpin_->setDecimals(2);
+            nmsThresholdSpin_->setValue(0.4);
+
+            blockSizeSpin_ = new QSpinBox(card);
+            blockSizeSpin_->setRange(2, 200);
+            blockSizeSpin_->setValue(28);
+
+            paddingSpin_ = new QDoubleSpinBox(card);
+            paddingSpin_->setRange(0.0, 1.0);
+            paddingSpin_->setSingleStep(0.05);
+            paddingSpin_->setDecimals(2);
+            paddingSpin_->setValue(0.18);
+
+            auto *grid = new QFormLayout();
+            grid->setLabelAlignment(Qt::AlignLeft);
+            grid->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+            grid->setHorizontalSpacing(18);
+            grid->setVerticalSpacing(10);
+            grid->addRow(makeFieldLabel("Score threshold", card), scoreThresholdSpin_);
+            grid->addRow(makeFieldLabel("NMS threshold", card), nmsThresholdSpin_);
+            grid->addRow(makeFieldLabel("Mosaic block size", card), blockSizeSpin_);
+            grid->addRow(makeFieldLabel("Face padding", card), paddingSpin_);
+            cardLayout->addLayout(grid);
+
+            root->addWidget(card);
+        }
+
+        // ─── Card: Log ────────────────────────────────────────────
+        {
+            auto *card = makeCard(central);
+            auto *cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(20, 18, 20, 18);
+            cardLayout->setSpacing(10);
+
+            cardLayout->addWidget(makeSectionTitle("Activity", card));
+            logEdit_ = new QPlainTextEdit(card);
+            logEdit_->setReadOnly(true);
+            logEdit_->setMinimumHeight(140);
+            cardLayout->addWidget(logEdit_);
+            root->addWidget(card);
+        }
+
+        scrollArea->setWidget(central);
+        containerLayout->addWidget(scrollArea, 1);
+
+        // ─── Bottom bar (progress + actions) ──────────────────────
+        auto *bottomBar = new QWidget(container);
+        bottomBar->setObjectName("bottomBar");
+        bottomBar->setAutoFillBackground(true);
+        auto *bottomLayout = new QHBoxLayout(bottomBar);
+        bottomLayout->setContentsMargins(24, 14, 24, 14);
+        bottomLayout->setSpacing(14);
+
+        statusLabel_ = new QLabel("Ready", bottomBar);
+        statusLabel_->setObjectName("statusLabel");
+
+        progressBar_ = new QProgressBar(bottomBar);
         progressBar_->setRange(0, 100);
         progressBar_->setValue(0);
-        root->addWidget(progressBar_);
+        progressBar_->setTextVisible(false);
+        progressBar_->setFixedHeight(6);
 
-        logEdit_ = new QPlainTextEdit(this);
-        logEdit_->setReadOnly(true);
-        logEdit_->setMinimumHeight(150);
-        root->addWidget(logEdit_);
-
-        auto actionRowLayout = std::make_unique<QHBoxLayout>();
-        auto *actionRow = actionRowLayout.get();
-        actionRow->addStretch();
-        stopButton_ = new QPushButton("Stop", this);
-        startButton_ = new QPushButton("Start", this);
-        startButton_->setDefault(true);
+        stopButton_ = new QPushButton("Stop", bottomBar);
+        stopButton_->setObjectName("dangerButton");
+        stopButton_->setCursor(Qt::PointingHandCursor);
         stopButton_->setEnabled(false);
+
+        startButton_ = new QPushButton("Start", bottomBar);
+        startButton_->setObjectName("primaryButton");
+        startButton_->setCursor(Qt::PointingHandCursor);
+        startButton_->setDefault(true);
+
         connect(startButton_, &QPushButton::clicked, this, &MainWindow::startProcessing);
         connect(stopButton_, &QPushButton::clicked, this, &MainWindow::stopProcessing);
-        actionRow->addWidget(stopButton_);
-        actionRow->addWidget(startButton_);
-        root->addLayout(actionRowLayout.release());
 
-        setCentralWidget(central.release());
+        bottomLayout->addWidget(statusLabel_);
+        bottomLayout->addWidget(progressBar_, 1);
+        bottomLayout->addWidget(stopButton_);
+        bottomLayout->addWidget(startButton_);
+
+        containerLayout->addWidget(bottomBar);
+
+        setCentralWidget(container);
+        statusBar()->hide();
+
         populateBundledModels();
-        appendLog("Drop images or folders here, then choose a model speed/quality mode.");
+        appendLog("Ready. Drop images or folders to begin.");
     }
 
     MainWindow::~MainWindow()
@@ -197,7 +518,13 @@ namespace faceveil
         {
             stopProcessing();
             workerThread_->quit();
-            workerThread_->wait();
+            constexpr int shutdownTimeoutMs = 5000;
+            if (!workerThread_->wait(shutdownTimeoutMs))
+            {
+                qWarning("Worker thread did not finish within %d ms; terminating.", shutdownTimeoutMs);
+                workerThread_->terminate();
+                workerThread_->wait();
+            }
         }
     }
 
@@ -228,7 +555,7 @@ namespace faceveil
         if (!path.isEmpty())
         {
             const QFileInfo info(path);
-            modelCombo_->addItem("Custom - " + info.fileName(), info.absoluteFilePath());
+            modelCombo_->addItem("Custom — " + info.fileName(), info.absoluteFilePath());
             modelCombo_->setCurrentIndex(modelCombo_->count() - 1);
             modelPathEdit_->setText(path);
         }
@@ -290,6 +617,7 @@ namespace faceveil
 
         setProcessing(true);
         progressBar_->setValue(0);
+        statusLabel_->setText("Starting…");
 
         workerThread_ = new QThread(this);
         worker_ = new ProcessorWorker(modelPath,
@@ -308,13 +636,17 @@ namespace faceveil
         {
             progressBar_->setRange(0, std::max(total, 1));
             progressBar_->setValue(completed);
+            if (total > 0)
+            {
+                statusLabel_->setText(QString("Processing  %1 / %2").arg(completed).arg(total));
+            }
         });
         connect(worker_, &ProcessorWorker::finished, this, &MainWindow::onWorkerFinished);
         connect(worker_, &ProcessorWorker::finished, workerThread_, &QThread::quit);
         connect(workerThread_, &QThread::finished, worker_, &QObject::deleteLater);
         connect(workerThread_, &QThread::finished, workerThread_, &QObject::deleteLater);
 
-        appendLog("Starting...");
+        appendLog("Starting…");
         workerThread_->start();
     }
 
@@ -322,7 +654,8 @@ namespace faceveil
     {
         if (worker_ != nullptr)
         {
-            appendLog("Stopping after the current image...");
+            appendLog("Stopping after the current image…");
+            statusLabel_->setText("Stopping…");
             QMetaObject::invokeMethod(worker_, "cancel", Qt::QueuedConnection);
         }
     }
@@ -330,6 +663,7 @@ namespace faceveil
     void MainWindow::onWorkerFinished(bool cancelled)
     {
         appendLog(cancelled ? "Cancelled." : "Finished.");
+        statusLabel_->setText(cancelled ? "Cancelled" : "Done");
         setProcessing(false);
         worker_ = nullptr;
         workerThread_ = nullptr;
@@ -386,8 +720,8 @@ namespace faceveil
         };
 
         const std::array<ModelOption, 2> options = {
-            ModelOption{"Fast - SCRFD 2.5G", "2.5g_bnkps.onnx"},
-            ModelOption{"Accurate - SCRFD 10G", "10g_bnkps.onnx"},
+            ModelOption{"Fast  ·  SCRFD 2.5G", "2.5g_bnkps.onnx"},
+            ModelOption{"Accurate  ·  SCRFD 10G", "10g_bnkps.onnx"},
         };
 
         for (const auto &option: options)
@@ -401,7 +735,7 @@ namespace faceveil
 
         if (selectedModelPath().isEmpty())
         {
-            appendLog("Bundled models were not found. Use Model... to select an ONNX file.");
+            appendLog("Bundled models not found. Use Browse… to select an ONNX file.");
         }
     }
 
@@ -423,6 +757,6 @@ namespace faceveil
     void MainWindow::appendLog(const QString &message) const
     {
         const auto time = QDateTime::currentDateTime().toString("HH:mm:ss");
-        logEdit_->appendPlainText(QString("[%1] %2").arg(time, message));
+        logEdit_->appendPlainText(QString("[%1]  %2").arg(time, message));
     }
 } // namespace faceveil

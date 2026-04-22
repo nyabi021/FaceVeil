@@ -5,6 +5,7 @@
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
+class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPlainTextEdit;
@@ -74,6 +75,7 @@ namespace faceveil
         QPlainTextEdit *logEdit_ = nullptr;
         QPushButton *startButton_ = nullptr;
         QPushButton *stopButton_ = nullptr;
+        QLabel *statusLabel_ = nullptr;
 
         QThread *workerThread_ = nullptr;
         ProcessorWorker *worker_ = nullptr;
