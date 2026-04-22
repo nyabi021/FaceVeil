@@ -1,0 +1,53 @@
+#pragma once
+
+#include "faceveil/FaceDetection.hpp"
+
+#include <onnxruntime_cxx_api.h>
+#include <opencv2/core.hpp>
+
+#include <string>
+#include <vector>
+
+namespace faceveil
+{
+    class ScrfdFaceDetector
+    {
+    public:
+        explicit ScrfdFaceDetector(const std::string &modelPath, int inputSize = 640);
+
+        FaceDetections detect(const cv::Mat &bgrImage, float scoreThreshold, float nmsThreshold);
+
+    private:
+        struct PreparedImage
+        {
+            std::vector<float> tensor;
+            int originalWidth = 0;
+            int originalHeight = 0;
+            float scale = 1.0F;
+            int resizedWidth = 0;
+            int resizedHeight = 0;
+        };
+
+        [[nodiscard]] PreparedImage prepare(const cv::Mat &bgrImage) const;
+
+        [[nodiscard]] FaceDetections decode(const std::vector<Ort::Value> &outputs,
+                                            const PreparedImage &prepared,
+                                            float scoreThreshold,
+                                            float nmsThreshold) const;
+
+        [[nodiscard]] static std::vector<cv::Point2f> anchorCenters(int featureHeight, int featureWidth, int stride);
+
+        static float intersectionOverUnion(const cv::Rect2f &a, const cv::Rect2f &b);
+
+        static FaceDetections nonMaxSuppression(FaceDetections detections, float threshold);
+
+        int inputSize_;
+        Ort::Env env_;
+        Ort::SessionOptions sessionOptions_;
+        Ort::Session session_;
+        std::vector<std::string> inputNames_;
+        std::vector<std::string> outputNames_;
+        std::vector<const char *> inputNamePtrs_;
+        std::vector<const char *> outputNamePtrs_;
+    };
+} // namespace faceveil
