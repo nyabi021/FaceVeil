@@ -24,7 +24,7 @@ A maintenance release: security, stability, and UX improvements. No feature chan
 - Undo / Redo in Review mode (⌘Z / ⌘⇧Z, 64-step history)
 - Settings and window geometry persist across launches
 - Drag-and-drop shows the correct cursor for invalid drops
-- Activity log capped at 5 000 lines
+- Activity log capped at 5,000 lines
 
 ## Packaging
 - Windows script: qmake-based Qt detection, stricter dependency checks
