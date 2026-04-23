@@ -4,6 +4,7 @@ build-release/
 dist/
 *.user
 *.DS_Store
+._*
 models/*.onnx
 output/
 .idea/
