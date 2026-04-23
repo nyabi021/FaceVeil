@@ -6,12 +6,10 @@
 #include "faceveil/ScrfdFaceDetector.hpp"
 
 #include <QDir>
-#include <QImage>
 #include <QImageReader>
 #include <QMetaObject>
 #include <QRectF>
 #include <QSize>
-#include <QVector>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -25,7 +23,6 @@ namespace faceveil
 {
     namespace
     {
-
         constexpr std::uintmax_t kMaxInputFileBytes = 1ULL << 30;
         constexpr long long kMaxPixelCount = 200LL * 1000LL * 1000LL;
 
@@ -50,12 +47,14 @@ namespace faceveil
             }
 
             const long long pixelCount =
-                static_cast<long long>(size.width()) * static_cast<long long>(size.height());
+                    static_cast<long long>(size.width()) * static_cast<long long>(size.height());
             if (pixelCount > kMaxPixelCount)
             {
-                return {false,
-                        QString("image too large, %1 x %2").arg(size.width()).arg(size.height()),
-                        size};
+                return {
+                    false,
+                    QString("image too large, %1 x %2").arg(size.width()).arg(size.height()),
+                    size
+                };
             }
 
             return {true, {}, size};
@@ -63,7 +62,6 @@ namespace faceveil
 
         QImage matToQImage(const cv::Mat &bgr)
         {
-
             QImage image(bgr.data, bgr.cols, bgr.rows, static_cast<int>(bgr.step), QImage::Format_BGR888);
             return image.copy();
         }
@@ -150,7 +148,6 @@ namespace faceveil
 
         std::filesystem::path uniqueTempPath(const std::filesystem::path &destination)
         {
-
             static thread_local std::mt19937_64 rng{std::random_device{}()};
             std::uniform_int_distribution<std::uint64_t> dist;
             const auto suffix = dist(rng);
@@ -174,7 +171,6 @@ namespace faceveil
             std::filesystem::rename(temp, destination, ec);
             if (ec)
             {
-
                 std::filesystem::copy_file(temp, destination,
                                            std::filesystem::copy_options::overwrite_existing, ec);
                 std::error_code removeEc;
@@ -258,8 +254,7 @@ namespace faceveil
             {
                 emit logMessage("Loading SCRFD model...");
                 detector_ = std::make_shared<ScrfdFaceDetector>(modelPath_.toStdString());
-            }
-            else
+            } else
             {
                 emit logMessage("Reusing loaded SCRFD model.");
             }
@@ -290,8 +285,8 @@ namespace faceveil
             std::error_code canonicalError;
             const auto canonicalRoot = std::filesystem::canonical(outputRoot, canonicalError);
             const auto safeRoot = canonicalError
-                ? outputRoot.lexically_normal()
-                : canonicalRoot;
+                                      ? outputRoot.lexically_normal()
+                                      : canonicalRoot;
 
             int completed = 0;
             int index = 0;
@@ -322,8 +317,8 @@ namespace faceveil
                 {
                     emit logMessage(
                         QString("Skipped (cannot create parent dir): %1 — %2")
-                            .arg(QString::fromStdString(source.filename().string()),
-                                 QString::fromStdString(parentMkdirError.message())));
+                        .arg(QString::fromStdString(source.filename().string()),
+                             QString::fromStdString(parentMkdirError.message())));
                     emit progressChanged(++completed, total);
                     continue;
                 }
@@ -334,8 +329,8 @@ namespace faceveil
                 {
                     emit logMessage(
                         QString("Skipped (file too large, %1 MB): %2")
-                            .arg(static_cast<qulonglong>(fileSize >> 20))
-                            .arg(QString::fromStdString(source.filename().string())));
+                        .arg(static_cast<qulonglong>(fileSize >> 20))
+                        .arg(QString::fromStdString(source.filename().string())));
                     emit progressChanged(++completed, total);
                     continue;
                 }
@@ -361,13 +356,13 @@ namespace faceveil
                 }
 
                 const long long pixelCount =
-                    static_cast<long long>(image.cols) * static_cast<long long>(image.rows);
+                        static_cast<long long>(image.cols) * static_cast<long long>(image.rows);
                 if (pixelCount > kMaxPixelCount)
                 {
                     emit logMessage(
                         QString("Skipped (image too large, %1 × %2): %3")
-                            .arg(image.cols).arg(image.rows)
-                            .arg(fileName));
+                        .arg(image.cols).arg(image.rows)
+                        .arg(fileName));
                     image.release();
                     emit progressChanged(++completed, total);
                     continue;
@@ -400,8 +395,7 @@ namespace faceveil
                     if (!invoked)
                     {
                         emit logMessage("Review bridge unavailable; saved without review.");
-                    }
-                    else
+                    } else
                     {
                         switch (reviewResult.decision)
                         {
@@ -429,8 +423,7 @@ namespace faceveil
                     {
                         emit logMessage(QString("Failed to copy: %1").arg(
                             QString::fromStdString(destination.string())));
-                    }
-                    else
+                    } else
                     {
                         emit logMessage(QString("Skipped (original copied): %1").arg(fileName));
                     }
@@ -445,8 +438,7 @@ namespace faceveil
                 if (!atomicImwrite(destination, image))
                 {
                     emit logMessage(QString("Failed to save: %1").arg(QString::fromStdString(destination.string())));
-                }
-                else
+                } else
                 {
                     emit logMessage(QString("Processed %1 face(s): %2")
                         .arg(static_cast<int>(finalFaces.size()))

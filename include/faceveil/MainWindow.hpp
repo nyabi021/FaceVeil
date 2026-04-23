@@ -63,7 +63,7 @@ namespace faceveil
 
         void onWorkerFinished(bool cancelled);
 
-        void toggleAdvanced(bool expanded);
+        void toggleAdvanced(bool expanded) const;
 
         void resetAdvancedDefaults() const;
 

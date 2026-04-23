@@ -10,7 +10,6 @@ namespace faceveil
 {
     namespace
     {
-
         std::string lowercaseExtension(const std::filesystem::path &path)
         {
             auto extension = path.extension().string();
@@ -97,7 +96,7 @@ namespace faceveil
 
             std::error_code error;
 
-            const auto options = std::filesystem::directory_options::skip_permission_denied;
+            constexpr auto options = std::filesystem::directory_options::skip_permission_denied;
             if (recursive)
             {
                 auto it = std::filesystem::recursive_directory_iterator(path, options, error);

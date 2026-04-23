@@ -6,8 +6,6 @@
 
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDateTime>
-#include <QDebug>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -29,7 +27,6 @@
 #include <QToolButton>
 #include <QThread>
 #include <QUrl>
-#include <QVBoxLayout>
 #include <QWidget>
 
 #include <array>
@@ -595,7 +592,6 @@ namespace faceveil
 
     MainWindow::~MainWindow()
     {
-
         if (workerThread_ != nullptr)
         {
             stopProcessing();
@@ -606,7 +602,6 @@ namespace faceveil
 
     namespace
     {
-
         bool hasAcceptableLocalUrls(const QMimeData *mime)
         {
             if (mime == nullptr || !mime->hasUrls())
@@ -634,8 +629,7 @@ namespace faceveil
         if (hasAcceptableLocalUrls(event->mimeData()))
         {
             event->acceptProposedAction();
-        }
-        else
+        } else
         {
             event->ignore();
         }
@@ -733,14 +727,14 @@ namespace faceveil
         const QString rawOutput = outputDirEdit_->text();
         const QFileInfo outputInfo(rawOutput);
         const QString canonicalOutput = outputInfo.exists()
-            ? outputInfo.canonicalFilePath()
-            : QDir::cleanPath(rawOutput);
+                                            ? outputInfo.canonicalFilePath()
+                                            : QDir::cleanPath(rawOutput);
         for (const auto &input: inputPaths())
         {
             const QFileInfo inputInfo(input);
             const QString canonicalInput = inputInfo.exists()
-                ? inputInfo.canonicalFilePath()
-                : QDir::cleanPath(input);
+                                               ? inputInfo.canonicalFilePath()
+                                               : QDir::cleanPath(input);
             if (canonicalInput.isEmpty() || canonicalOutput.isEmpty())
             {
                 continue;
@@ -752,7 +746,7 @@ namespace faceveil
             if (isSame || isUnder)
             {
                 appendLog(QString("Refusing to run: output folder is inside input '%1'. "
-                                  "Pick a different output folder so originals aren't overwritten.")
+                        "Pick a different output folder so originals aren't overwritten.")
                     .arg(input));
                 return;
             }
@@ -787,10 +781,10 @@ namespace faceveil
         });
         connect(worker_, &ProcessorWorker::stageChanged, this,
                 [this](int index, int total, const QString &stage, const QString &fileName)
-        {
-            statusLabel_->setText(QString("%1/%2  ·  %3  ·  %4")
-                .arg(index).arg(total).arg(stage, fileName));
-        });
+                {
+                    statusLabel_->setText(QString("%1/%2  ·  %3  ·  %4")
+                        .arg(index).arg(total).arg(stage, fileName));
+                });
 
         connect(worker_, &ProcessorWorker::finished, this, &MainWindow::onWorkerFinished);
         connect(workerThread_, &QThread::finished, worker_, &QObject::deleteLater);
@@ -835,7 +829,7 @@ namespace faceveil
         workerThread_ = nullptr;
     }
 
-    void MainWindow::toggleAdvanced(bool expanded)
+    void MainWindow::toggleAdvanced(bool expanded) const
     {
         if (advancedBody_ != nullptr)
         {
@@ -925,8 +919,7 @@ namespace faceveil
         if (currentLabel.startsWith("Custom"))
         {
             settings.setValue("customModelPath", selectedModelPath());
-        }
-        else
+        } else
         {
             settings.remove("customModelPath");
         }
@@ -958,8 +951,8 @@ namespace faceveil
             const QString existing = inputList_->item(i)->text();
             const QFileInfo existingInfo(existing);
             const QString existingKey = existingInfo.canonicalFilePath().isEmpty()
-                ? QDir::cleanPath(existing)
-                : existingInfo.canonicalFilePath();
+                                            ? QDir::cleanPath(existing)
+                                            : existingInfo.canonicalFilePath();
             if (existingKey.compare(key, Qt::CaseInsensitive) == 0)
             {
                 return;
