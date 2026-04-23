@@ -16,17 +16,143 @@
 
 #include <exception>
 #include <filesystem>
+#include <random>
+#include <system_error>
 
 namespace faceveil
 {
     namespace
     {
+
+        constexpr std::uintmax_t kMaxInputFileBytes = 1ULL << 30;
+        constexpr long long kMaxPixelCount = 200LL * 1000LL * 1000LL;
+
+        constexpr int kReviewMaxLongEdge = 1600;
+
         QImage matToQImage(const cv::Mat &bgr)
         {
-            cv::Mat rgb;
-            cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
-            QImage image(rgb.data, rgb.cols, rgb.rows, static_cast<int>(rgb.step), QImage::Format_RGB888);
+
+            QImage image(bgr.data, bgr.cols, bgr.rows, static_cast<int>(bgr.step), QImage::Format_BGR888);
             return image.copy();
+        }
+
+        std::pair<QImage, double> makeReviewPreview(const cv::Mat &bgr)
+        {
+            const int longEdge = std::max(bgr.cols, bgr.rows);
+            if (longEdge <= kReviewMaxLongEdge)
+            {
+                return {matToQImage(bgr), 1.0};
+            }
+            const double scale = static_cast<double>(kReviewMaxLongEdge) / longEdge;
+            const int newW = std::max(1, static_cast<int>(std::round(bgr.cols * scale)));
+            const int newH = std::max(1, static_cast<int>(std::round(bgr.rows * scale)));
+            cv::Mat resized;
+            cv::resize(bgr, resized, cv::Size(newW, newH), 0.0, 0.0, cv::INTER_AREA);
+            return {matToQImage(resized), scale};
+        }
+
+        QVector<QRectF> scaleRects(const QVector<QRectF> &rects, double factor)
+        {
+            if (factor == 1.0)
+            {
+                return rects;
+            }
+            QVector<QRectF> scaled;
+            scaled.reserve(rects.size());
+            for (const auto &rect: rects)
+            {
+                scaled.push_back(QRectF(rect.x() * factor,
+                                        rect.y() * factor,
+                                        rect.width() * factor,
+                                        rect.height() * factor));
+            }
+            return scaled;
+        }
+
+        bool isWithinRoot(const std::filesystem::path &candidate, const std::filesystem::path &root)
+        {
+            std::error_code ec;
+            const auto relative = std::filesystem::relative(candidate, root, ec);
+            if (ec || relative.empty())
+            {
+                return false;
+            }
+            const auto first = relative.begin();
+            return first != relative.end() && first->string() != "..";
+        }
+
+        bool destinationIsSafe(const std::filesystem::path &destination,
+                               const std::filesystem::path &safeRoot)
+        {
+            std::error_code ec;
+            auto current = destination;
+            while (!current.empty() && current != current.root_path())
+            {
+                if (std::filesystem::exists(current, ec))
+                {
+                    if (std::filesystem::is_symlink(current, ec))
+                    {
+                        auto resolved = std::filesystem::canonical(current, ec);
+                        if (ec || !isWithinRoot(resolved, safeRoot))
+                        {
+                            return false;
+                        }
+                    }
+                    break;
+                }
+                current = current.parent_path();
+            }
+
+            if (std::filesystem::exists(destination, ec))
+            {
+                auto resolved = std::filesystem::canonical(destination, ec);
+                if (ec || !isWithinRoot(resolved, safeRoot))
+                {
+                    return false;
+                }
+            }
+
+            const auto lexical = destination.lexically_normal();
+            return isWithinRoot(lexical, safeRoot) || lexical == safeRoot.lexically_normal();
+        }
+
+        std::filesystem::path uniqueTempPath(const std::filesystem::path &destination)
+        {
+
+            static thread_local std::mt19937_64 rng{std::random_device{}()};
+            std::uniform_int_distribution<std::uint64_t> dist;
+            const auto suffix = dist(rng);
+            const auto stem = destination.stem().string();
+            const auto ext = destination.extension().string();
+            const auto parent = destination.parent_path();
+            const auto tempName = stem + ".faceveil-" + std::to_string(suffix) + ext;
+            return parent.empty() ? std::filesystem::path(tempName) : parent / tempName;
+        }
+
+        bool atomicImwrite(const std::filesystem::path &destination, const cv::Mat &image)
+        {
+            const auto temp = uniqueTempPath(destination);
+            if (!cv::imwrite(temp.string(), image))
+            {
+                std::error_code ec;
+                std::filesystem::remove(temp, ec);
+                return false;
+            }
+            std::error_code ec;
+            std::filesystem::rename(temp, destination, ec);
+            if (ec)
+            {
+
+                std::filesystem::copy_file(temp, destination,
+                                           std::filesystem::copy_options::overwrite_existing, ec);
+                std::error_code removeEc;
+                std::filesystem::remove(temp, removeEc);
+                if (ec)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         FaceDetections toDetections(const QVector<QRectF> &boxes)
@@ -56,7 +182,7 @@ namespace faceveil
             }
             return result;
         }
-    } // namespace
+    }
 
     ProcessorWorker::ProcessorWorker(QString modelPath,
                                      QStringList inputs,
@@ -67,7 +193,8 @@ namespace faceveil
                                      int mosaicBlockSize,
                                      float paddingRatio,
                                      bool reviewEnabled,
-                                     QObject *reviewReceiver)
+                                     QObject *reviewReceiver,
+                                     std::shared_ptr<ScrfdFaceDetector> cachedDetector)
         : modelPath_(std::move(modelPath)),
           inputs_(std::move(inputs)),
           outputDirectory_(std::move(outputDirectory)),
@@ -77,8 +204,16 @@ namespace faceveil
           mosaicBlockSize_(mosaicBlockSize),
           paddingRatio_(paddingRatio),
           reviewEnabled_(reviewEnabled),
-          reviewReceiver_(reviewReceiver)
+          reviewReceiver_(reviewReceiver),
+          detector_(std::move(cachedDetector))
     {
+    }
+
+    ProcessorWorker::~ProcessorWorker() = default;
+
+    std::shared_ptr<ScrfdFaceDetector> ProcessorWorker::takeDetector()
+    {
+        return std::move(detector_);
     }
 
     void ProcessorWorker::process()
@@ -87,8 +222,15 @@ namespace faceveil
 
         try
         {
-            emit logMessage("Loading SCRFD model...");
-            ScrfdFaceDetector detector(modelPath_.toStdString());
+            if (!detector_)
+            {
+                emit logMessage("Loading SCRFD model...");
+                detector_ = std::make_shared<ScrfdFaceDetector>(modelPath_.toStdString());
+            }
+            else
+            {
+                emit logMessage("Reusing loaded SCRFD model.");
+            }
 
             emit logMessage("Scanning images...");
             const auto images = scanImages(inputs_, recursive_);
@@ -103,11 +245,21 @@ namespace faceveil
             }
 
             const auto outputRoot = std::filesystem::path(outputDirectory_.toStdString());
-            std::filesystem::create_directories(outputRoot);
+            std::error_code mkdirError;
+            std::filesystem::create_directories(outputRoot, mkdirError);
+            if (mkdirError)
+            {
+                emit logMessage(QString("Cannot create output directory: %1")
+                    .arg(QString::fromStdString(mkdirError.message())));
+                emit finished(false);
+                return;
+            }
 
             std::error_code canonicalError;
-            const auto canonicalRoot = std::filesystem::weakly_canonical(outputRoot, canonicalError);
-            const auto safeRoot = canonicalError ? outputRoot : canonicalRoot;
+            const auto canonicalRoot = std::filesystem::canonical(outputRoot, canonicalError);
+            const auto safeRoot = canonicalError
+                ? outputRoot.lexically_normal()
+                : canonicalRoot;
 
             int completed = 0;
             int index = 0;
@@ -121,16 +273,9 @@ namespace faceveil
                 }
 
                 const auto source = item.sourcePath;
-                const auto destination = safeRoot / item.relativePath;
+                const auto destination = (safeRoot / item.relativePath).lexically_normal();
 
-                std::error_code destError;
-                const auto canonicalDestination = std::filesystem::weakly_canonical(destination, destError);
-                const auto relativeFromRoot = destError
-                    ? std::filesystem::path{}
-                    : std::filesystem::relative(canonicalDestination, safeRoot, destError);
-                const bool escaped = destError || relativeFromRoot.empty() ||
-                    relativeFromRoot.begin()->string() == "..";
-                if (escaped)
+                if (!destinationIsSafe(destination, safeRoot))
                 {
                     emit logMessage(
                         QString("Skipped unsafe output path for: %1").arg(
@@ -139,7 +284,32 @@ namespace faceveil
                     continue;
                 }
 
-                std::filesystem::create_directories(destination.parent_path());
+                std::error_code parentMkdirError;
+                std::filesystem::create_directories(destination.parent_path(), parentMkdirError);
+                if (parentMkdirError)
+                {
+                    emit logMessage(
+                        QString("Skipped (cannot create parent dir): %1 — %2")
+                            .arg(QString::fromStdString(source.filename().string()),
+                                 QString::fromStdString(parentMkdirError.message())));
+                    emit progressChanged(++completed, total);
+                    continue;
+                }
+
+                std::error_code sizeError;
+                const auto fileSize = std::filesystem::file_size(source, sizeError);
+                if (!sizeError && fileSize > kMaxInputFileBytes)
+                {
+                    emit logMessage(
+                        QString("Skipped (file too large, %1 MB): %2")
+                            .arg(static_cast<qulonglong>(fileSize >> 20))
+                            .arg(QString::fromStdString(source.filename().string())));
+                    emit progressChanged(++completed, total);
+                    continue;
+                }
+
+                const QString fileName = QString::fromStdString(source.filename().string());
+                emit stageChanged(index, total, "Loading", fileName);
 
                 cv::Mat image = cv::imread(source.string(), cv::IMREAD_COLOR);
                 if (image.empty())
@@ -150,24 +320,39 @@ namespace faceveil
                     continue;
                 }
 
-                const auto detected = detector.detect(image, scoreThreshold_, nmsThreshold_);
+                const long long pixelCount =
+                    static_cast<long long>(image.cols) * static_cast<long long>(image.rows);
+                if (pixelCount > kMaxPixelCount)
+                {
+                    emit logMessage(
+                        QString("Skipped (image too large, %1 × %2): %3")
+                            .arg(image.cols).arg(image.rows)
+                            .arg(fileName));
+                    image.release();
+                    emit progressChanged(++completed, total);
+                    continue;
+                }
+
+                emit stageChanged(index, total, "Detecting", fileName);
+                const auto detected = detector_->detect(image, scoreThreshold_, nmsThreshold_);
                 FaceDetections finalFaces = detected;
                 bool skipThisImage = false;
 
                 if (reviewEnabled_ && reviewReceiver_)
                 {
-                    ReviewResult reviewResult;
-                    const QImage preview = matToQImage(image);
-                    const QVector<QRectF> detectedRects = toQRects(detected);
-                    const QString sourceName = QString::fromStdString(source.filename().string());
+                    emit stageChanged(index, total, "Reviewing", fileName);
 
+                    auto [preview, previewScale] = makeReviewPreview(image);
+                    const QVector<QRectF> detectedRects = scaleRects(toQRects(detected), previewScale);
+
+                    ReviewResult reviewResult;
                     const bool invoked = QMetaObject::invokeMethod(
                         reviewReceiver_.data(),
                         "requestReview",
                         Qt::BlockingQueuedConnection,
                         Q_RETURN_ARG(faceveil::ReviewResult, reviewResult),
                         Q_ARG(QImage, preview),
-                        Q_ARG(QString, sourceName),
+                        Q_ARG(QString, fileName),
                         Q_ARG(QVector<QRectF>, detectedRects),
                         Q_ARG(int, index),
                         Q_ARG(int, total));
@@ -188,7 +373,10 @@ namespace faceveil
                                 skipThisImage = true;
                                 break;
                             case ReviewDecision::Save:
-                                finalFaces = toDetections(reviewResult.finalBoxes);
+
+                                finalFaces = toDetections(
+                                    scaleRects(reviewResult.finalBoxes,
+                                               previewScale != 0.0 ? 1.0 / previewScale : 1.0));
                                 break;
                         }
                     }
@@ -196,23 +384,25 @@ namespace faceveil
 
                 if (skipThisImage)
                 {
-                    if (!cv::imwrite(destination.string(), image))
+                    emit stageChanged(index, total, "Saving", fileName);
+                    if (!atomicImwrite(destination, image))
                     {
                         emit logMessage(QString("Failed to copy: %1").arg(
                             QString::fromStdString(destination.string())));
                     }
                     else
                     {
-                        emit logMessage(QString("Skipped (original copied): %1").arg(
-                            QString::fromStdString(source.filename().string())));
+                        emit logMessage(QString("Skipped (original copied): %1").arg(fileName));
                     }
                     emit progressChanged(++completed, total);
                     continue;
                 }
 
+                emit stageChanged(index, total, "Applying mosaic", fileName);
                 applyMosaic(image, finalFaces, mosaicBlockSize_, paddingRatio_);
 
-                if (!cv::imwrite(destination.string(), image))
+                emit stageChanged(index, total, "Saving", fileName);
+                if (!atomicImwrite(destination, image))
                 {
                     emit logMessage(QString("Failed to save: %1").arg(QString::fromStdString(destination.string())));
                 }
@@ -220,7 +410,7 @@ namespace faceveil
                 {
                     emit logMessage(QString("Processed %1 face(s): %2")
                         .arg(static_cast<int>(finalFaces.size()))
-                        .arg(QString::fromStdString(source.filename().string())));
+                        .arg(fileName));
                 }
 
                 emit progressChanged(++completed, total);
@@ -239,4 +429,4 @@ namespace faceveil
     {
         cancelled_.store(true, std::memory_order_release);
     }
-} // namespace faceveil
+}

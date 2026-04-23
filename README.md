@@ -96,19 +96,38 @@ cmake --build build-windows --config Release
 
 ### macOS
 
+**Local build (ad-hoc signed, for testing on your own machine):**
+
 ```bash
 ./scripts/package_macos.sh
 ```
 
-Output:
+Output: `dist/macos/FaceVeil.app`
 
-```text
-dist/macos/FaceVeil.app
-```
+**Release build (Developer ID signed + notarized DMG):**
 
-The macOS package copies Qt, OpenCV, ONNX Runtime, and local ONNX files from `models/` into the app bundle.
+1. Install your **Developer ID Application** certificate in Keychain (Xcode → Settings → Accounts → Manage Certificates).
+2. One-time: store notary credentials in the keychain.
+   ```bash
+   xcrun notarytool store-credentials faceveil-notary \
+     --apple-id "you@example.com" \
+     --team-id "ABCDE12345" \
+     --password "app-specific-password"   # generate at appleid.apple.com
+   ```
+3. Sign, bundle, and create the DMG:
+   ```bash
+   DEVELOPER_ID="Developer ID Application: Your Name (ABCDE12345)" \
+     ./scripts/package_macos.sh
+   ```
+4. Notarize and staple:
+   ```bash
+   NOTARY_PROFILE=faceveil-notary \
+     ./scripts/notarize_macos.sh dist/macos/FaceVeil-*.dmg
+   ```
 
-For public distribution, sign the app with an Apple Developer ID certificate and notarize it with Apple. The local packaging script only performs ad-hoc signing for development and testing.
+The resulting `dist/macos/FaceVeil-<version>-arm64.dmg` is ready to upload to GitHub Releases. It will open without Gatekeeper warnings on any Apple Silicon Mac.
+
+The current pipeline targets Apple Silicon (arm64). For Universal binaries, rebuild OpenCV and ONNX Runtime as fat libraries and adjust `CMAKE_OSX_ARCHITECTURES`.
 
 ### Windows
 

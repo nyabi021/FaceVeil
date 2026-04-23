@@ -50,4 +50,4 @@ namespace faceveil
         std::vector<const char *> inputNamePtrs_;
         std::vector<const char *> outputNamePtrs_;
     };
-} // namespace faceveil
+}

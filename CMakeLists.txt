@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(FaceVeil VERSION 0.1.0 LANGUAGES CXX)
+project(FaceVeil VERSION 0.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,8 +44,15 @@ else()
 endif()
 
 set(FACEVEIL_APP_OPTIONS)
+set(FACEVEIL_APP_RESOURCES)
 if(APPLE)
     list(APPEND FACEVEIL_APP_OPTIONS MACOSX_BUNDLE)
+    set(APP_ICON_MACOS "${CMAKE_CURRENT_SOURCE_DIR}/assets/FaceVeil.icns")
+    if(EXISTS "${APP_ICON_MACOS}")
+        set_source_files_properties("${APP_ICON_MACOS}" PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources")
+        list(APPEND FACEVEIL_APP_RESOURCES "${APP_ICON_MACOS}")
+    endif()
 elseif(WIN32)
     list(APPEND FACEVEIL_APP_OPTIONS WIN32)
 endif()
@@ -66,6 +73,7 @@ qt_add_executable(FaceVeil ${FACEVEIL_APP_OPTIONS}
     include/faceveil/ReviewDialog.hpp
     include/faceveil/ReviewTypes.hpp
     include/faceveil/ScrfdFaceDetector.hpp
+    ${FACEVEIL_APP_RESOURCES}
 )
 
 if(WIN32)
@@ -79,12 +87,45 @@ target_link_libraries(FaceVeil PRIVATE
     onnxruntime::onnxruntime
 )
 
+# ── Security hardening ────────────────────────────────────────────
+# Opt-in compile/link flags that catch common memory-safety issues at runtime
+# and make exploitation harder. All of these are widely supported and cheap.
+if(MSVC)
+    target_compile_options(FaceVeil PRIVATE
+        /guard:cf        # Control Flow Guard
+        /GS              # Buffer security checks
+        /sdl             # Additional security checks
+    )
+    target_link_options(FaceVeil PRIVATE
+        /guard:cf
+        /DYNAMICBASE     # ASLR
+        /NXCOMPAT        # DEP
+        /HIGHENTROPYVA
+    )
+else()
+    target_compile_options(FaceVeil PRIVATE
+        -fstack-protector-strong
+        -fno-strict-aliasing
+        $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=2>
+    )
+    # PIE: required by most distro hardening policies and by macOS anyway.
+    set_target_properties(FaceVeil PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    if(NOT APPLE)
+        target_link_options(FaceVeil PRIVATE
+            -Wl,-z,relro
+            -Wl,-z,now
+            -Wl,-z,noexecstack
+        )
+    endif()
+endif()
+
 if(APPLE)
     set_target_properties(FaceVeil PROPERTIES
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.faceveil.app"
         MACOSX_BUNDLE_BUNDLE_NAME "FaceVeil"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_ICON_FILE "FaceVeil.icns"
     )
 endif()
 

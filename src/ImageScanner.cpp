@@ -4,18 +4,23 @@
 
 #include <algorithm>
 #include <system_error>
+#include <unordered_set>
 
 namespace faceveil
 {
     namespace
     {
+
         std::string lowercaseExtension(const std::filesystem::path &path)
         {
             auto extension = path.extension().string();
-            std::ranges::transform(extension, extension.begin(), [](unsigned char ch)
+            for (auto &ch: extension)
             {
-                return static_cast<char>(std::tolower(ch));
-            });
+                if (ch >= 'A' && ch <= 'Z')
+                {
+                    ch = static_cast<char>(ch - 'A' + 'a');
+                }
+            }
             return extension;
         }
 
@@ -48,7 +53,7 @@ namespace faceveil
             }
             results.push_back({file, relative});
         }
-    } // namespace
+    }
 
     bool isSupportedImage(const std::filesystem::path &path)
     {
@@ -62,6 +67,15 @@ namespace faceveil
     {
         std::vector<ScanResult> results;
 
+        std::unordered_set<std::string> visitedCanonical;
+        const auto markVisited = [&visitedCanonical](const std::filesystem::path &file) -> bool
+        {
+            std::error_code ec;
+            auto canonical = std::filesystem::canonical(file, ec);
+            const auto key = ec ? file.lexically_normal().string() : canonical.string();
+            return visitedCanonical.insert(key).second;
+        };
+
         for (const auto &input: inputs)
         {
             const QFileInfo info(input);
@@ -69,7 +83,10 @@ namespace faceveil
 
             if (info.isFile())
             {
-                appendFile(results, path, path.parent_path());
+                if (markVisited(path))
+                {
+                    appendFile(results, path, path.parent_path());
+                }
                 continue;
             }
 
@@ -79,28 +96,30 @@ namespace faceveil
             }
 
             std::error_code error;
+
+            const auto options = std::filesystem::directory_options::skip_permission_denied;
             if (recursive)
             {
-                for (const auto &entry: std::filesystem::recursive_directory_iterator(path, error))
+                auto it = std::filesystem::recursive_directory_iterator(path, options, error);
+                const auto end = std::filesystem::recursive_directory_iterator{};
+                while (!error && it != end)
                 {
-                    if (error)
+                    if (it->is_regular_file(error) && markVisited(it->path()))
                     {
-                        break;
+                        appendFile(results, it->path(), path);
                     }
-                    if (entry.is_regular_file())
-                    {
-                        appendFile(results, entry.path(), path);
-                    }
+                    it.increment(error);
                 }
             } else
             {
-                for (const auto &entry: std::filesystem::directory_iterator(path, error))
+                for (const auto &entry:
+                     std::filesystem::directory_iterator(path, options, error))
                 {
                     if (error)
                     {
                         break;
                     }
-                    if (entry.is_regular_file())
+                    if (entry.is_regular_file() && markVisited(entry.path()))
                     {
                         appendFile(results, entry.path(), path);
                     }
@@ -113,12 +132,6 @@ namespace faceveil
             return a.sourcePath.string() < b.sourcePath.string();
         });
 
-        results.erase(std::ranges::unique(results, [](const ScanResult &a, const ScanResult &b)
-                      {
-                          return a.sourcePath == b.sourcePath;
-                      }).begin(),
-                      results.end());
-
         return results;
     }
-} // namespace faceveil
+}

@@ -3,17 +3,21 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QShortcut>
 #include <QSizePolicy>
 #include <QVBoxLayout>
 #include <QWidget>
 
 #include <algorithm>
-#include <cmath>
+#include <cstddef>
+#include <functional>
+#include <vector>
 
 namespace faceveil
 {
@@ -21,14 +25,14 @@ namespace faceveil
     {
         struct Box
         {
-            QRectF rect;      // original image coordinates
-            bool detected;    // true: from model (yellow, toggle include)
-            bool included;    // for detected only
+            QRectF rect;
+            bool detected;
+            bool included;
         };
 
         constexpr int kMinBoxPixels = 6;
         constexpr int kHandleRadius = 5;
-    } // namespace
+    }
 
     class ReviewCanvas final : public QWidget
     {
@@ -38,10 +42,15 @@ namespace faceveil
         {
             setMouseTracking(true);
             setFocusPolicy(Qt::StrongFocus);
+            const QRectF imageBounds(QPointF(0, 0), QSizeF(image_.size()));
             boxes_.reserve(detected.size());
             for (const auto &rect: detected)
             {
-                boxes_.push_back(Box{rect, true, true});
+                const QRectF clamped = rect.intersected(imageBounds);
+                if (clamped.width() >= 1.0 && clamped.height() >= 1.0)
+                {
+                    boxes_.push_back(Box{clamped, true, true});
+                }
             }
             setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         }
@@ -50,14 +59,56 @@ namespace faceveil
         {
             QVector<QRectF> result;
             result.reserve(boxes_.size());
+            const QRectF imageBounds(QPointF(0, 0), QSizeF(image_.size()));
             for (const auto &box: boxes_)
             {
                 if (!box.detected || box.included)
                 {
-                    result.push_back(box.rect);
+
+                    const QRectF clamped = box.rect.intersected(imageBounds);
+                    if (clamped.width() >= 1.0 && clamped.height() >= 1.0)
+                    {
+                        result.push_back(clamped);
+                    }
                 }
             }
             return result;
+        }
+
+        [[nodiscard]] bool canUndo() const { return !undoStack_.empty(); }
+        [[nodiscard]] bool canRedo() const { return !redoStack_.empty(); }
+
+        void undo()
+        {
+            if (undoStack_.empty())
+            {
+                return;
+            }
+            redoStack_.push_back(boxes_);
+            boxes_ = undoStack_.back();
+            undoStack_.pop_back();
+            hoveredIndex_ = -1;
+            update();
+            emitHistoryChanged();
+        }
+
+        void redo()
+        {
+            if (redoStack_.empty())
+            {
+                return;
+            }
+            undoStack_.push_back(boxes_);
+            boxes_ = redoStack_.back();
+            redoStack_.pop_back();
+            hoveredIndex_ = -1;
+            update();
+            emitHistoryChanged();
+        }
+
+        void setHistoryChangedCallback(std::function<void()> cb)
+        {
+            historyChanged_ = std::move(cb);
         }
 
         [[nodiscard]] QSize sizeHint() const override
@@ -94,17 +145,17 @@ namespace faceveil
                 QColor fill;
                 if (!box.detected)
                 {
-                    stroke = QColor("#3B82F6"); // user-added: blue
+                    stroke = QColor("#3B82F6");
                     fill = QColor(59, 130, 246, 60);
                 }
                 else if (box.included)
                 {
-                    stroke = QColor("#F59E0B"); // detected-kept: amber
+                    stroke = QColor("#F59E0B");
                     fill = QColor(245, 158, 11, 60);
                 }
                 else
                 {
-                    stroke = QColor("#9CA3AF"); // excluded: gray
+                    stroke = QColor("#9CA3AF");
                     fill = QColor(156, 163, 175, 30);
                 }
 
@@ -145,6 +196,7 @@ namespace faceveil
             const int hit = hitTest(pos);
             if (hit >= 0)
             {
+                pushUndoSnapshot();
                 auto &box = boxes_[hit];
                 if (box.detected)
                 {
@@ -199,6 +251,7 @@ namespace faceveil
                     QRectF(QPointF(0, 0), QSizeF(image_.size())));
                 if (imageRect.width() >= 1.0 && imageRect.height() >= 1.0)
                 {
+                    pushUndoSnapshot();
                     boxes_.push_back(Box{imageRect, false, true});
                 }
             }
@@ -275,12 +328,36 @@ namespace faceveil
             return -1;
         }
 
+        void pushUndoSnapshot()
+        {
+            undoStack_.push_back(boxes_);
+            redoStack_.clear();
+            if (undoStack_.size() > kMaxUndo)
+            {
+                undoStack_.erase(undoStack_.begin());
+            }
+            emitHistoryChanged();
+        }
+
+        void emitHistoryChanged() const
+        {
+            if (historyChanged_)
+            {
+                historyChanged_();
+            }
+        }
+
+        static constexpr std::size_t kMaxUndo = 64;
+
         QImage image_;
         QVector<Box> boxes_;
         int hoveredIndex_ = -1;
         bool drawing_ = false;
         QPointF dragStart_;
         QPointF dragCurrent_;
+        std::vector<QVector<Box>> undoStack_;
+        std::vector<QVector<Box>> redoStack_;
+        std::function<void()> historyChanged_;
     };
 
     ReviewDialog::ReviewDialog(const QImage &image,
@@ -311,7 +388,7 @@ namespace faceveil
 
         hintLabel_ = new QLabel(
             "Click a box to toggle · Drag an empty area to add · "
-            "Click a blue box to delete", this);
+            "Click a blue box to delete · ⌘Z / ⌘⇧Z to undo/redo", this);
         hintLabel_->setStyleSheet("color: #6B7280; font-size: 12px;");
         root->addWidget(hintLabel_);
 
@@ -320,6 +397,14 @@ namespace faceveil
 
         auto *cancelAll = new QPushButton("Cancel All", this);
         cancelAll->setCursor(Qt::PointingHandCursor);
+
+        auto *undoButton = new QPushButton("Undo", this);
+        undoButton->setCursor(Qt::PointingHandCursor);
+        undoButton->setEnabled(false);
+
+        auto *redoButton = new QPushButton("Redo", this);
+        redoButton->setCursor(Qt::PointingHandCursor);
+        redoButton->setEnabled(false);
 
         auto *skip = new QPushButton("Skip (copy original)", this);
         skip->setCursor(Qt::PointingHandCursor);
@@ -330,6 +415,8 @@ namespace faceveil
         save->setDefault(true);
 
         buttonRow->addWidget(cancelAll);
+        buttonRow->addWidget(undoButton);
+        buttonRow->addWidget(redoButton);
         buttonRow->addStretch(1);
         buttonRow->addWidget(skip);
         buttonRow->addWidget(save);
@@ -340,6 +427,8 @@ namespace faceveil
             decision_ = ReviewDecision::CancelAll;
             reject();
         });
+        connect(undoButton, &QPushButton::clicked, this, [this] { canvas_->undo(); });
+        connect(redoButton, &QPushButton::clicked, this, [this] { canvas_->redo(); });
         connect(skip, &QPushButton::clicked, this, [this]
         {
             decision_ = ReviewDecision::Skip;
@@ -350,6 +439,17 @@ namespace faceveil
             decision_ = ReviewDecision::Save;
             accept();
         });
+
+        canvas_->setHistoryChangedCallback([this, undoButton, redoButton]
+        {
+            undoButton->setEnabled(canvas_->canUndo());
+            redoButton->setEnabled(canvas_->canRedo());
+        });
+
+        auto *undoShortcut = new QShortcut(QKeySequence::Undo, this);
+        auto *redoShortcut = new QShortcut(QKeySequence::Redo, this);
+        connect(undoShortcut, &QShortcut::activated, this, [this] { canvas_->undo(); });
+        connect(redoShortcut, &QShortcut::activated, this, [this] { canvas_->redo(); });
     }
 
     ReviewResult ReviewDialog::result() const
@@ -359,4 +459,4 @@ namespace faceveil
         res.finalBoxes = canvas_->finalBoxes();
         return res;
     }
-} // namespace faceveil
+}
