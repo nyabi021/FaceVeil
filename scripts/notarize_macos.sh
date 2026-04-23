@@ -69,24 +69,28 @@ fi
 
 echo "📤 Submitting to Apple notary service (timeout: ${NOTARY_TIMEOUT}s)…"
 
-# Wrap the submit in a timeout so a stalled Apple service can't hang the
-# build forever. macOS ships `gtimeout` via coreutils or you can fall back
-# to a bash trick with `( sleep ... ) &` — we only reach for gtimeout when
-# available to keep this dependency-light.
-RUN_WITH_TIMEOUT=()
+TIMEOUT_BIN=""
 if command -v gtimeout >/dev/null 2>&1; then
-    RUN_WITH_TIMEOUT=(gtimeout "$NOTARY_TIMEOUT")
+    TIMEOUT_BIN="gtimeout"
 elif command -v timeout >/dev/null 2>&1; then
-    RUN_WITH_TIMEOUT=(timeout "$NOTARY_TIMEOUT")
+    TIMEOUT_BIN="timeout"
 else
     echo "ℹ️  'timeout'/'gtimeout' not installed — submission will wait indefinitely."
 fi
 
 SUBMIT_OUTPUT=""
-if ! SUBMIT_OUTPUT="$("${RUN_WITH_TIMEOUT[@]}" xcrun notarytool submit "$DMG_PATH" \
-        "${SUBMIT_ARGS[@]}" --output-format plist 2>&1)"; then
-    rc=$?
-    echo "$SUBMIT_OUTPUT"
+rc=0
+if [[ -n "$TIMEOUT_BIN" ]]; then
+    SUBMIT_OUTPUT="$("$TIMEOUT_BIN" "$NOTARY_TIMEOUT" xcrun notarytool submit "$DMG_PATH" \
+        "${SUBMIT_ARGS[@]}" --output-format plist 2>&1)" || rc=$?
+else
+    SUBMIT_OUTPUT="$(xcrun notarytool submit "$DMG_PATH" \
+        "${SUBMIT_ARGS[@]}" --output-format plist 2>&1)" || rc=$?
+fi
+
+echo "$SUBMIT_OUTPUT"
+
+if [[ $rc -ne 0 ]]; then
     if [[ $rc -eq 124 ]]; then
         echo "❌ Notarization timed out after ${NOTARY_TIMEOUT}s."
     else
@@ -94,7 +98,6 @@ if ! SUBMIT_OUTPUT="$("${RUN_WITH_TIMEOUT[@]}" xcrun notarytool submit "$DMG_PAT
     fi
     exit $rc
 fi
-echo "$SUBMIT_OUTPUT"
 
 STATUS="$(echo "$SUBMIT_OUTPUT" | plutil -extract status raw - 2>/dev/null || echo "unknown")"
 SUBMISSION_ID="$(echo "$SUBMIT_OUTPUT" | plutil -extract id raw - 2>/dev/null || echo "")"
