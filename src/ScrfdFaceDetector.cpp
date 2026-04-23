@@ -13,6 +13,8 @@ namespace faceveil
     {
         constexpr std::array<int, 3> kStrides = {8, 16, 32};
         constexpr int kChannels = 3;
+        constexpr int kMaxAnchorsPerLocation = 2;
+        constexpr size_t kMaxCandidatesBeforeNms = 2000;
 
         cv::Rect2f distanceToBox(const cv::Point2f &center, const float *distances)
         {
@@ -194,6 +196,11 @@ namespace faceveil
             const int featureWidth = inputSize_ / stride;
             auto anchors = anchorCenters(featureHeight, featureWidth, stride);
             const int baseAnchorCount = static_cast<int>(anchors.size());
+            const int maxExpectedScores = baseAnchorCount * kMaxAnchorsPerLocation;
+            if (scoreCount > maxExpectedScores)
+            {
+                throw std::runtime_error("SCRFD output tensor shape is unexpectedly large.");
+            }
             if (baseAnchorCount > 0 && scoreCount > baseAnchorCount)
             {
                 const int repeats = std::max(1, scoreCount / baseAnchorCount);
@@ -243,6 +250,17 @@ namespace faceveil
                 const float bottom = std::clamp(y + height, y + 1.0F, static_cast<float>(prepared.originalHeight));
                 detections.push_back({cv::Rect2f(x, y, right - x, bottom - y), score});
             }
+        }
+
+        if (detections.size() > kMaxCandidatesBeforeNms)
+        {
+            std::ranges::partial_sort(detections,
+                                      detections.begin() + static_cast<std::ptrdiff_t>(kMaxCandidatesBeforeNms),
+                                      [](const FaceDetection &a, const FaceDetection &b)
+            {
+                return a.score > b.score;
+            });
+            detections.resize(kMaxCandidatesBeforeNms);
         }
 
         return nonMaxSuppression(std::move(detections), nmsThreshold);

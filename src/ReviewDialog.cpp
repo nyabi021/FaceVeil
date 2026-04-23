@@ -378,7 +378,7 @@ namespace faceveil
 
         auto *header = new QLabel(
             QString("<b>%1</b> &nbsp;·&nbsp; <span style='color:#6B7280'>%2 / %3</span>")
-                .arg(sourceName).arg(currentIndex).arg(total), this);
+                .arg(sourceName.toHtmlEscaped()).arg(currentIndex).arg(total), this);
         header->setTextFormat(Qt::RichText);
         root->addWidget(header);
 

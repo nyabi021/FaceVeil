@@ -7,8 +7,10 @@
 
 #include <QDir>
 #include <QImage>
+#include <QImageReader>
 #include <QMetaObject>
 #include <QRectF>
+#include <QSize>
 #include <QVector>
 
 #include <opencv2/imgcodecs.hpp>
@@ -28,6 +30,36 @@ namespace faceveil
         constexpr long long kMaxPixelCount = 200LL * 1000LL * 1000LL;
 
         constexpr int kReviewMaxLongEdge = 1600;
+
+        struct ImageDimensionCheck
+        {
+            bool ok = false;
+            QString reason;
+            QSize size;
+        };
+
+        ImageDimensionCheck inspectImageDimensions(const std::filesystem::path &source)
+        {
+            QImageReader reader(QString::fromStdString(source.string()));
+            reader.setAutoTransform(false);
+
+            const QSize size = reader.size();
+            if (!size.isValid() || size.width() <= 0 || size.height() <= 0)
+            {
+                return {false, "cannot inspect image dimensions", {}};
+            }
+
+            const long long pixelCount =
+                static_cast<long long>(size.width()) * static_cast<long long>(size.height());
+            if (pixelCount > kMaxPixelCount)
+            {
+                return {false,
+                        QString("image too large, %1 x %2").arg(size.width()).arg(size.height()),
+                        size};
+            }
+
+            return {true, {}, size};
+        }
 
         QImage matToQImage(const cv::Mat &bgr)
         {
@@ -310,6 +342,14 @@ namespace faceveil
 
                 const QString fileName = QString::fromStdString(source.filename().string());
                 emit stageChanged(index, total, "Loading", fileName);
+
+                const auto dimensions = inspectImageDimensions(source);
+                if (!dimensions.ok)
+                {
+                    emit logMessage(QString("Skipped (%1): %2").arg(dimensions.reason, fileName));
+                    emit progressChanged(++completed, total);
+                    continue;
+                }
 
                 cv::Mat image = cv::imread(source.string(), cv::IMREAD_COLOR);
                 if (image.empty())
