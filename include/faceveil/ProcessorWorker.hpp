@@ -6,9 +6,12 @@
 #include <QStringList>
 
 #include <atomic>
+#include <memory>
 
 namespace faceveil
 {
+    class ScrfdFaceDetector;
+
     class ProcessorWorker final : public QObject
     {
         Q_OBJECT
@@ -23,7 +26,12 @@ namespace faceveil
                         int mosaicBlockSize,
                         float paddingRatio,
                         bool reviewEnabled,
-                        QObject *reviewReceiver);
+                        QObject *reviewReceiver,
+                        std::shared_ptr<ScrfdFaceDetector> cachedDetector = {});
+
+        ~ProcessorWorker() override;
+
+        [[nodiscard]] std::shared_ptr<ScrfdFaceDetector> takeDetector();
 
     public slots:
         void process();
@@ -32,6 +40,8 @@ namespace faceveil
 
     signals:
         void progressChanged(int completed, int total);
+
+        void stageChanged(int index, int total, const QString &stage, const QString &fileName);
 
         void logMessage(const QString &message);
 
@@ -49,5 +59,6 @@ namespace faceveil
         bool reviewEnabled_;
         QPointer<QObject> reviewReceiver_;
         std::atomic<bool> cancelled_{false};
+        std::shared_ptr<ScrfdFaceDetector> detector_;
     };
-} // namespace faceveil
+}

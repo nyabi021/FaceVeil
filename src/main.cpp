@@ -29,16 +29,21 @@ namespace
         palette.setColor(QPalette::Disabled, QPalette::WindowText, QColor("#9CA3AF"));
         app.setPalette(palette);
     }
-} // namespace
+}
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+
+    QCoreApplication::setOrganizationName("FaceVeil");
+    QCoreApplication::setOrganizationDomain("faceveil.app");
+    QCoreApplication::setApplicationName("FaceVeil");
+
     QApplication::setStyle(QStyleFactory::create("Fusion"));
     applyLightPalette(app);
 
     qRegisterMetaType<faceveil::ReviewResult>("faceveil::ReviewResult");
-    qRegisterMetaType<QVector<QRectF>>("QVector<QRectF>");
+    qRegisterMetaType<QVector<QRectF> >("QVector<QRectF>");
 
 #ifdef Q_OS_MACOS
     QFont defaultFont("SF Pro Text", 13);

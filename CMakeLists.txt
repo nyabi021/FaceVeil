@@ -83,6 +83,38 @@ target_link_libraries(FaceVeil PRIVATE
     onnxruntime::onnxruntime
 )
 
+# ── Security hardening ────────────────────────────────────────────
+# Opt-in compile/link flags that catch common memory-safety issues at runtime
+# and make exploitation harder. All of these are widely supported and cheap.
+if(MSVC)
+    target_compile_options(FaceVeil PRIVATE
+        /guard:cf        # Control Flow Guard
+        /GS              # Buffer security checks
+        /sdl             # Additional security checks
+    )
+    target_link_options(FaceVeil PRIVATE
+        /guard:cf
+        /DYNAMICBASE     # ASLR
+        /NXCOMPAT        # DEP
+        /HIGHENTROPYVA
+    )
+else()
+    target_compile_options(FaceVeil PRIVATE
+        -fstack-protector-strong
+        -fno-strict-aliasing
+        $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=2>
+    )
+    # PIE: required by most distro hardening policies and by macOS anyway.
+    set_target_properties(FaceVeil PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    if(NOT APPLE)
+        target_link_options(FaceVeil PRIVATE
+            -Wl,-z,relro
+            -Wl,-z,now
+            -Wl,-z,noexecstack
+        )
+    endif()
+endif()
+
 if(APPLE)
     set_target_properties(FaceVeil PROPERTIES
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.faceveil.app"

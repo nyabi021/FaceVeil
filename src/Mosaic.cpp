@@ -45,4 +45,4 @@ namespace faceveil
             cv::resize(small, roi, roi.size(), 0.0, 0.0, cv::INTER_NEAREST);
         }
     }
-} // namespace faceveil
+}

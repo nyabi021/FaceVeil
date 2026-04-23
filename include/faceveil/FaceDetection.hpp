@@ -13,4 +13,4 @@ namespace faceveil
     };
 
     using FaceDetections = std::vector<FaceDetection>;
-} // namespace faceveil
+}

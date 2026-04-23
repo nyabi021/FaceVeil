@@ -17,7 +17,7 @@ void printShape(const std::vector<int64_t>& shape) {
     std::cout << "]";
 }
 
-} // namespace
+}
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {

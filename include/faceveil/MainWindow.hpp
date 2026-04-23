@@ -5,6 +5,8 @@
 #include <QMainWindow>
 #include <QVector>
 
+#include <memory>
+
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
@@ -22,6 +24,7 @@ class QWidget;
 namespace faceveil
 {
     class ProcessorWorker;
+    class ScrfdFaceDetector;
 
     class MainWindow final : public QMainWindow
     {
@@ -42,6 +45,8 @@ namespace faceveil
         void dragEnterEvent(QDragEnterEvent *event) override;
 
         void dropEvent(QDropEvent *event) override;
+
+        void closeEvent(QCloseEvent *event) override;
 
     private slots:
         void chooseModel();
@@ -77,6 +82,10 @@ namespace faceveil
 
         void appendLog(const QString &message) const;
 
+        void loadSettings();
+
+        void saveSettings() const;
+
         QComboBox *modelCombo_ = nullptr;
         QLineEdit *modelPathEdit_ = nullptr;
         QLineEdit *outputDirEdit_ = nullptr;
@@ -97,5 +106,8 @@ namespace faceveil
 
         QThread *workerThread_ = nullptr;
         ProcessorWorker *worker_ = nullptr;
+
+        std::shared_ptr<ScrfdFaceDetector> cachedDetector_;
+        QString cachedDetectorModelPath_;
     };
-} // namespace faceveil
+}

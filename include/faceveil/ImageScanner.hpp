@@ -17,4 +17,4 @@ namespace faceveil
     std::vector<ScanResult> scanImages(const QStringList &inputs, bool recursive);
 
     bool isSupportedImage(const std::filesystem::path &path);
-} // namespace faceveil
+}

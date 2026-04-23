@@ -2,6 +2,7 @@
 
 #include "faceveil/ProcessorWorker.hpp"
 #include "faceveil/ReviewDialog.hpp"
+#include "faceveil/ScrfdFaceDetector.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -17,9 +18,11 @@
 #include <QListWidget>
 #include <QMimeData>
 #include <QPlainTextEdit>
+#include <QCloseEvent>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSettings>
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -30,7 +33,6 @@
 #include <QWidget>
 
 #include <array>
-#include <memory>
 
 namespace faceveil
 {
@@ -291,7 +293,7 @@ namespace faceveil
             card->setFrameShape(QFrame::NoFrame);
             return card;
         }
-    } // namespace
+    }
 
     MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     {
@@ -317,7 +319,6 @@ namespace faceveil
         root->setContentsMargins(32, 28, 32, 28);
         root->setSpacing(20);
 
-        // ─── Header ───────────────────────────────────────────────
         auto *header = new QWidget(central);
         auto *headerLayout = new QVBoxLayout(header);
         headerLayout->setContentsMargins(0, 0, 0, 0);
@@ -331,7 +332,6 @@ namespace faceveil
         headerLayout->addWidget(subtitle);
         root->addWidget(header);
 
-        // ─── Card: Model ──────────────────────────────────────────
         {
             auto *card = makeCard(central);
             auto *cardLayout = new QVBoxLayout(card);
@@ -364,7 +364,6 @@ namespace faceveil
             root->addWidget(card);
         }
 
-        // ─── Card: Inputs ─────────────────────────────────────────
         {
             auto *card = makeCard(central);
             auto *cardLayout = new QVBoxLayout(card);
@@ -413,7 +412,6 @@ namespace faceveil
             root->addWidget(card);
         }
 
-        // ─── Card: Output ─────────────────────────────────────────
         {
             auto *card = makeCard(central);
             auto *cardLayout = new QVBoxLayout(card);
@@ -437,7 +435,6 @@ namespace faceveil
             root->addWidget(card);
         }
 
-        // ─── Card: Advanced Options (collapsible) ─────────────────
         {
             auto *card = makeCard(central);
             auto *cardLayout = new QVBoxLayout(card);
@@ -533,7 +530,6 @@ namespace faceveil
             root->addWidget(card);
         }
 
-        // ─── Card: Log ────────────────────────────────────────────
         {
             auto *card = makeCard(central);
             auto *cardLayout = new QVBoxLayout(card);
@@ -544,6 +540,8 @@ namespace faceveil
             logEdit_ = new QPlainTextEdit(card);
             logEdit_->setReadOnly(true);
             logEdit_->setMinimumHeight(140);
+
+            logEdit_->setMaximumBlockCount(5000);
             cardLayout->addWidget(logEdit_);
             root->addWidget(card);
         }
@@ -551,7 +549,6 @@ namespace faceveil
         scrollArea->setWidget(central);
         containerLayout->addWidget(scrollArea, 1);
 
-        // ─── Bottom bar (progress + actions) ──────────────────────
         auto *bottomBar = new QWidget(container);
         bottomBar->setObjectName("bottomBar");
         bottomBar->setAutoFillBackground(true);
@@ -592,38 +589,73 @@ namespace faceveil
         statusBar()->hide();
 
         populateBundledModels();
+        loadSettings();
         appendLog("Ready. Drop images or folders to begin.");
     }
 
     MainWindow::~MainWindow()
     {
+
         if (workerThread_ != nullptr)
         {
             stopProcessing();
             workerThread_->quit();
-            constexpr int shutdownTimeoutMs = 5000;
-            if (!workerThread_->wait(shutdownTimeoutMs))
+            workerThread_->wait();
+        }
+    }
+
+    namespace
+    {
+
+        bool hasAcceptableLocalUrls(const QMimeData *mime)
+        {
+            if (mime == nullptr || !mime->hasUrls())
             {
-                qWarning("Worker thread did not finish within %d ms; terminating.", shutdownTimeoutMs);
-                workerThread_->terminate();
-                workerThread_->wait();
+                return false;
             }
+            for (const auto &url: mime->urls())
+            {
+                if (!url.isLocalFile())
+                {
+                    continue;
+                }
+                const QFileInfo info(url.toLocalFile());
+                if (info.exists() && (info.isFile() || info.isDir()))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
     void MainWindow::dragEnterEvent(QDragEnterEvent *event)
     {
-        if (event->mimeData()->hasUrls())
+        if (hasAcceptableLocalUrls(event->mimeData()))
         {
             event->acceptProposedAction();
+        }
+        else
+        {
+            event->ignore();
         }
     }
 
     void MainWindow::dropEvent(QDropEvent *event)
     {
+        if (!hasAcceptableLocalUrls(event->mimeData()))
+        {
+            event->ignore();
+            return;
+        }
         for (const auto &url: event->mimeData()->urls())
         {
-            if (url.isLocalFile())
+            if (!url.isLocalFile())
+            {
+                continue;
+            }
+            const QFileInfo info(url.toLocalFile());
+            if (info.exists() && (info.isFile() || info.isDir()))
             {
                 addInputPath(url.toLocalFile());
             }
@@ -698,9 +730,39 @@ namespace faceveil
             return;
         }
 
+        const QString rawOutput = outputDirEdit_->text();
+        const QFileInfo outputInfo(rawOutput);
+        const QString canonicalOutput = outputInfo.exists()
+            ? outputInfo.canonicalFilePath()
+            : QDir::cleanPath(rawOutput);
+        for (const auto &input: inputPaths())
+        {
+            const QFileInfo inputInfo(input);
+            const QString canonicalInput = inputInfo.exists()
+                ? inputInfo.canonicalFilePath()
+                : QDir::cleanPath(input);
+            if (canonicalInput.isEmpty() || canonicalOutput.isEmpty())
+            {
+                continue;
+            }
+
+            const bool isSame = canonicalInput.compare(canonicalOutput, Qt::CaseInsensitive) == 0;
+            const QString withSep = canonicalInput.endsWith('/') ? canonicalInput : canonicalInput + '/';
+            const bool isUnder = canonicalOutput.startsWith(withSep, Qt::CaseInsensitive);
+            if (isSame || isUnder)
+            {
+                appendLog(QString("Refusing to run: output folder is inside input '%1'. "
+                                  "Pick a different output folder so originals aren't overwritten.")
+                    .arg(input));
+                return;
+            }
+        }
+
         setProcessing(true);
         progressBar_->setValue(0);
         statusLabel_->setText("Starting…");
+
+        auto detectorForRun = (cachedDetectorModelPath_ == modelPath) ? cachedDetector_ : nullptr;
 
         workerThread_ = new QThread(this);
         worker_ = new ProcessorWorker(modelPath,
@@ -712,7 +774,8 @@ namespace faceveil
                                       blockSizeSpin_->value(),
                                       static_cast<float>(paddingSpin_->value()),
                                       reviewCheck_->isChecked(),
-                                      this);
+                                      this,
+                                      std::move(detectorForRun));
 
         worker_->moveToThread(workerThread_);
         connect(workerThread_, &QThread::started, worker_, &ProcessorWorker::process);
@@ -721,13 +784,15 @@ namespace faceveil
         {
             progressBar_->setRange(0, std::max(total, 1));
             progressBar_->setValue(completed);
-            if (total > 0)
-            {
-                statusLabel_->setText(QString("Processing  %1 / %2").arg(completed).arg(total));
-            }
         });
+        connect(worker_, &ProcessorWorker::stageChanged, this,
+                [this](int index, int total, const QString &stage, const QString &fileName)
+        {
+            statusLabel_->setText(QString("%1/%2  ·  %3  ·  %4")
+                .arg(index).arg(total).arg(stage, fileName));
+        });
+
         connect(worker_, &ProcessorWorker::finished, this, &MainWindow::onWorkerFinished);
-        connect(worker_, &ProcessorWorker::finished, workerThread_, &QThread::quit);
         connect(workerThread_, &QThread::finished, worker_, &QObject::deleteLater);
         connect(workerThread_, &QThread::finished, workerThread_, &QObject::deleteLater);
 
@@ -750,6 +815,22 @@ namespace faceveil
         appendLog(cancelled ? "Cancelled." : "Finished.");
         statusLabel_->setText(cancelled ? "Cancelled" : "Done");
         setProcessing(false);
+
+        if (worker_ != nullptr)
+        {
+            auto detector = worker_->takeDetector();
+            if (detector)
+            {
+                cachedDetector_ = std::move(detector);
+                cachedDetectorModelPath_ = selectedModelPath();
+            }
+        }
+
+        if (workerThread_ != nullptr)
+        {
+            workerThread_->quit();
+        }
+
         worker_ = nullptr;
         workerThread_ = nullptr;
     }
@@ -774,6 +855,93 @@ namespace faceveil
         paddingSpin_->setValue(kDefaultPadding);
     }
 
+    void MainWindow::closeEvent(QCloseEvent *event)
+    {
+        saveSettings();
+        QMainWindow::closeEvent(event);
+    }
+
+    void MainWindow::loadSettings()
+    {
+        QSettings settings;
+
+        settings.beginGroup("window");
+        const auto geometry = settings.value("geometry").toByteArray();
+        if (!geometry.isEmpty())
+        {
+            restoreGeometry(geometry);
+        }
+        settings.endGroup();
+
+        settings.beginGroup("processing");
+        const auto savedModelIndex = settings.value("modelIndex", 0).toInt();
+        if (modelCombo_ != nullptr && savedModelIndex >= 0 && savedModelIndex < modelCombo_->count())
+        {
+            modelCombo_->setCurrentIndex(savedModelIndex);
+        }
+        const auto savedCustomModel = settings.value("customModelPath").toString();
+        if (!savedCustomModel.isEmpty() && QFileInfo::exists(savedCustomModel))
+        {
+            const QFileInfo info(savedCustomModel);
+            modelCombo_->addItem("Custom — " + info.fileName(), info.absoluteFilePath());
+            modelCombo_->setCurrentIndex(modelCombo_->count() - 1);
+        }
+
+        const auto outputDir = settings.value("outputDir").toString();
+        if (!outputDir.isEmpty())
+        {
+            outputDirEdit_->setText(outputDir);
+        }
+
+        recursiveCheck_->setChecked(settings.value("recursive", true).toBool());
+        reviewCheck_->setChecked(settings.value("review", false).toBool());
+
+        scoreThresholdSpin_->setValue(settings.value("scoreThreshold", kDefaultScoreThreshold).toDouble());
+        nmsThresholdSpin_->setValue(settings.value("nmsThreshold", kDefaultNmsThreshold).toDouble());
+        blockSizeSpin_->setValue(settings.value("blockSize", kDefaultBlockSize).toInt());
+        paddingSpin_->setValue(settings.value("padding", kDefaultPadding).toDouble());
+
+        if (settings.value("advancedExpanded", false).toBool())
+        {
+            advancedToggle_->setChecked(true);
+        }
+        settings.endGroup();
+
+        updateModelPathFromSelection();
+    }
+
+    void MainWindow::saveSettings() const
+    {
+        QSettings settings;
+
+        settings.beginGroup("window");
+        settings.setValue("geometry", saveGeometry());
+        settings.endGroup();
+
+        settings.beginGroup("processing");
+        settings.setValue("modelIndex", modelCombo_ ? modelCombo_->currentIndex() : 0);
+
+        const auto currentLabel = modelCombo_ ? modelCombo_->currentText() : QString();
+        if (currentLabel.startsWith("Custom"))
+        {
+            settings.setValue("customModelPath", selectedModelPath());
+        }
+        else
+        {
+            settings.remove("customModelPath");
+        }
+
+        settings.setValue("outputDir", outputDirEdit_->text());
+        settings.setValue("recursive", recursiveCheck_->isChecked());
+        settings.setValue("review", reviewCheck_->isChecked());
+        settings.setValue("scoreThreshold", scoreThresholdSpin_->value());
+        settings.setValue("nmsThreshold", nmsThresholdSpin_->value());
+        settings.setValue("blockSize", blockSizeSpin_->value());
+        settings.setValue("padding", paddingSpin_->value());
+        settings.setValue("advancedExpanded", advancedToggle_ ? advancedToggle_->isChecked() : false);
+        settings.endGroup();
+    }
+
     void MainWindow::addInputPath(const QString &path) const
     {
         if (path.isEmpty())
@@ -781,9 +949,18 @@ namespace faceveil
             return;
         }
 
+        const QFileInfo info(path);
+        const QString canonical = info.canonicalFilePath();
+        const QString key = canonical.isEmpty() ? QDir::cleanPath(path) : canonical;
+
         for (int i = 0; i < inputList_->count(); ++i)
         {
-            if (inputList_->item(i)->text() == path)
+            const QString existing = inputList_->item(i)->text();
+            const QFileInfo existingInfo(existing);
+            const QString existingKey = existingInfo.canonicalFilePath().isEmpty()
+                ? QDir::cleanPath(existing)
+                : existingInfo.canonicalFilePath();
+            if (existingKey.compare(key, Qt::CaseInsensitive) == 0)
             {
                 return;
             }
@@ -876,4 +1053,4 @@ namespace faceveil
         dialog.exec();
         return dialog.result();
     }
-} // namespace faceveil
+}

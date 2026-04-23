@@ -35,4 +35,4 @@ namespace faceveil
         QLabel *hintLabel_ = nullptr;
         ReviewDecision decision_ = ReviewDecision::Save;
     };
-} // namespace faceveil
+}

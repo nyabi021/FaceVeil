@@ -23,12 +23,31 @@ EXECUTABLE="$MACOS_DIR/FaceVeil"
 ENTITLEMENTS="$ROOT_DIR/scripts/entitlements.plist"
 BUNDLE_ID="${BUNDLE_ID:-com.faceveil.app}"
 
+# Required tools.
+for tool in cmake codesign macdeployqt install_name_tool otool hdiutil ditto brew; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "❌ Required tool not found: $tool"
+        exit 1
+    fi
+done
+
+# Homebrew root is /opt/homebrew on Apple Silicon and /usr/local on Intel Macs;
+# query it dynamically so the script works on both.
+HOMEBREW_PREFIX="$(brew --prefix)"
+
 DEVELOPER_ID="${DEVELOPER_ID:-}"
 if [[ -z "$DEVELOPER_ID" ]]; then
     echo "⚠️  DEVELOPER_ID is not set — falling back to ad-hoc signing (local only)."
     SIGN_IDENTITY="-"
     DISTRIBUTABLE=0
 else
+    # Validate up front so we fail before spending minutes on packaging.
+    if ! security find-identity -p codesigning -v 2>/dev/null | grep -q -F "$DEVELOPER_ID"; then
+        echo "❌ Developer signing identity not found in keychain: $DEVELOPER_ID"
+        echo "   Available codesigning identities:"
+        security find-identity -p codesigning -v || true
+        exit 1
+    fi
     SIGN_IDENTITY="$DEVELOPER_ID"
     DISTRIBUTABLE=1
 fi
@@ -48,14 +67,18 @@ VERSION="$(plutil -extract CFBundleShortVersionString raw "$DIST_APP/Contents/In
 # ── Deploy Qt + bundle third-party dylibs ──────────────────────────
 macdeployqt "$DIST_APP" \
   -verbose=1 \
-  -libpath=/opt/homebrew/lib \
-  -libpath=/opt/homebrew/Frameworks
+  -libpath="$HOMEBREW_PREFIX/lib" \
+  -libpath="$HOMEBREW_PREFIX/Frameworks"
 
 mkdir -p "$FRAMEWORKS_DIR"
 
 is_bundle_candidate() {
   local dependency="$1"
-  [[ "$dependency" == /opt/homebrew/* || "$dependency" == /usr/local/* ]]
+  # Cover both Apple Silicon (/opt/homebrew) and Intel (/usr/local) Homebrew
+  # layouts, plus any custom prefix reported by `brew --prefix`.
+  [[ "$dependency" == /opt/homebrew/* \
+     || "$dependency" == /usr/local/* \
+     || "$dependency" == "$HOMEBREW_PREFIX"/* ]]
 }
 
 copy_dependency() {
@@ -183,7 +206,7 @@ fi
 DMG_NAME="FaceVeil-${VERSION}-arm64.dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
 STAGING_DIR="$(mktemp -d)"
-trap 'rm -rf "$STAGING_DIR"' EXIT
+trap 'rm -rf "$STAGING_DIR" || true' EXIT
 
 ditto "$DIST_APP" "$STAGING_DIR/$APP_NAME"
 ln -s /Applications "$STAGING_DIR/Applications"

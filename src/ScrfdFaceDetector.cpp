@@ -3,7 +3,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
-#include <numeric>
+#include <limits>
 #include <stdexcept>
 
 namespace faceveil
@@ -21,7 +21,7 @@ namespace faceveil
             const float bottom = distances[3];
             return {center.x - left, center.y - top, left + right, top + bottom};
         }
-    } // namespace
+    }
 
     ScrfdFaceDetector::ScrfdFaceDetector(const std::string &modelPath, int inputSize)
         : inputSize_(inputSize),
@@ -37,7 +37,6 @@ namespace faceveil
 
         const auto inputCount = session_.GetInputCount();
         inputNames_.reserve(inputCount);
-        inputNamePtrs_.reserve(inputCount);
         for (size_t i = 0; i < inputCount; ++i)
         {
             auto name = session_.GetInputNameAllocated(i, allocator);
@@ -46,13 +45,19 @@ namespace faceveil
 
         const auto outputCount = session_.GetOutputCount();
         outputNames_.reserve(outputCount);
-        outputNamePtrs_.reserve(outputCount);
         for (size_t i = 0; i < outputCount; ++i)
         {
             auto name = session_.GetOutputNameAllocated(i, allocator);
             outputNames_.emplace_back(name.get());
         }
 
+        if (inputNames_.empty() || outputNames_.size() < 6)
+        {
+            throw std::runtime_error("The selected model does not look like an SCRFD ONNX model.");
+        }
+
+        inputNamePtrs_.reserve(inputNames_.size());
+        outputNamePtrs_.reserve(outputNames_.size());
         for (const auto &name: inputNames_)
         {
             inputNamePtrs_.push_back(name.c_str());
@@ -60,11 +65,6 @@ namespace faceveil
         for (const auto &name: outputNames_)
         {
             outputNamePtrs_.push_back(name.c_str());
-        }
-
-        if (inputNames_.empty() || outputNames_.size() < 6)
-        {
-            throw std::runtime_error("The selected model does not look like an SCRFD ONNX model.");
         }
     }
 
@@ -152,15 +152,36 @@ namespace faceveil
             const auto &scoreTensor = outputs[index];
             const auto &bboxTensor = outputs[index + featureMapCount];
 
-            auto scoreShape = scoreTensor.GetTensorTypeAndShapeInfo().GetShape();
-            auto bboxShape = bboxTensor.GetTensorTypeAndShapeInfo().GetShape();
+            if (!scoreTensor.IsTensor() || !bboxTensor.IsTensor())
+            {
+                continue;
+            }
+            const auto scoreInfo = scoreTensor.GetTensorTypeAndShapeInfo();
+            const auto bboxInfo = bboxTensor.GetTensorTypeAndShapeInfo();
+            if (scoreInfo.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+                bboxInfo.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
+            {
+                continue;
+            }
+
+            const auto scoreShape = scoreInfo.GetShape();
+            const auto bboxShape = bboxInfo.GetShape();
             if (scoreShape.empty() || bboxShape.empty())
             {
                 continue;
             }
 
-            const auto scoreCount = static_cast<int>(scoreTensor.GetTensorTypeAndShapeInfo().GetElementCount());
-            const auto bboxCount = static_cast<int>(bboxTensor.GetTensorTypeAndShapeInfo().GetElementCount());
+            const auto scoreElements = scoreInfo.GetElementCount();
+            const auto bboxElements = bboxInfo.GetElementCount();
+
+            if (scoreElements == 0 ||
+                scoreElements > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+                bboxElements > static_cast<size_t>(std::numeric_limits<int>::max()))
+            {
+                continue;
+            }
+            const auto scoreCount = static_cast<int>(scoreElements);
+            const auto bboxCount = static_cast<int>(bboxElements);
             if (scoreCount <= 0 || bboxCount < scoreCount * 4)
             {
                 continue;
@@ -188,6 +209,10 @@ namespace faceveil
 
             const auto *scores = scoreTensor.GetTensorData<float>();
             const auto *boxes = bboxTensor.GetTensorData<float>();
+            if (scores == nullptr || boxes == nullptr)
+            {
+                continue;
+            }
             const int anchorsToRead = std::min(scoreCount, static_cast<int>(anchors.size()));
 
             for (int i = 0; i < anchorsToRead; ++i)
@@ -279,4 +304,4 @@ namespace faceveil
 
         return kept;
     }
-} // namespace faceveil
+}
