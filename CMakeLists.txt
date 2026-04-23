@@ -44,8 +44,15 @@ else()
 endif()
 
 set(FACEVEIL_APP_OPTIONS)
+set(FACEVEIL_APP_RESOURCES)
 if(APPLE)
     list(APPEND FACEVEIL_APP_OPTIONS MACOSX_BUNDLE)
+    set(APP_ICON_MACOS "${CMAKE_CURRENT_SOURCE_DIR}/assets/FaceVeil.icns")
+    if(EXISTS "${APP_ICON_MACOS}")
+        set_source_files_properties("${APP_ICON_MACOS}" PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources")
+        list(APPEND FACEVEIL_APP_RESOURCES "${APP_ICON_MACOS}")
+    endif()
 elseif(WIN32)
     list(APPEND FACEVEIL_APP_OPTIONS WIN32)
 endif()
@@ -66,6 +73,7 @@ qt_add_executable(FaceVeil ${FACEVEIL_APP_OPTIONS}
     include/faceveil/ReviewDialog.hpp
     include/faceveil/ReviewTypes.hpp
     include/faceveil/ScrfdFaceDetector.hpp
+    ${FACEVEIL_APP_RESOURCES}
 )
 
 target_include_directories(FaceVeil PRIVATE include)
@@ -81,6 +89,7 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_NAME "FaceVeil"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_ICON_FILE "FaceVeil.icns"
     )
 endif()
 
