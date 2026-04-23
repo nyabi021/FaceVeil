@@ -3,12 +3,8 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
-<<<<<<< HEAD
 #include <filesystem>
-#include <numeric>
-=======
 #include <limits>
->>>>>>> refs/remotes/origin/main
 #include <stdexcept>
 
 namespace faceveil

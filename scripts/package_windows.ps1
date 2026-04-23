@@ -73,16 +73,11 @@ Write-Host "ONNX Runtime:     $OnnxRuntimeRoot"
 # ── Configure + build ──────────────────────────────────────────────
 cmake -S $RootDir -B $BuildDir `
     -G $Generator `
-    -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_BUILD_TYPE=$BuildType `
     -DCMAKE_PREFIX_PATH="$QtRoot;$OpenCvRoot" `
-<<<<<<< HEAD
     -DONNXRUNTIME_ROOT=$OnnxRuntimeRoot `
     -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
-cmake --build $BuildDir --config Release
-=======
-    -DONNXRUNTIME_ROOT=$OnnxRuntimeRoot
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed (exit $LASTEXITCODE)" }
->>>>>>> refs/remotes/origin/main
 
 cmake --build $BuildDir --config $BuildType
 if ($LASTEXITCODE -ne 0) { throw "CMake build failed (exit $LASTEXITCODE)" }
@@ -123,51 +118,33 @@ if (-not $onnxDll) {
 Copy-Item $onnxDll $DistDir -Force
 Write-Host "Bundled: $onnxDll"
 
-<<<<<<< HEAD
-$opencvSearchRoots = @(
+# ── OpenCV DLLs ────────────────────────────────────────────────────
+# Probe the usual layouts (kit root, parent, x64\...\bin, bin). Prefer
+# opencv_world*.dll (monolithic) when present, otherwise fall back to the
+# individual module DLLs. Exclude debug builds (*d.dll).
+$searchRoots = @(
     $OpenCvRoot,
-    (Join-Path $OpenCvRoot "..")
-) | Where-Object { Test-Path $_ } | ForEach-Object { Resolve-Path $_ } | Select-Object -Unique
+    (Join-Path $OpenCvRoot ".."),
+    (Join-Path $OpenCvRoot "x64"),
+    (Join-Path $OpenCvRoot "bin")
+) | Where-Object { Test-Path $_ } | ForEach-Object { (Resolve-Path $_).Path } | Select-Object -Unique
 
-$opencvDlls = @()
-foreach ($root in $opencvSearchRoots) {
-    $opencvDlls += Get-ChildItem -Path $root -Recurse -Filter "opencv_world*.dll" -File -ErrorAction SilentlyContinue |
+$worldDlls = foreach ($root in $searchRoots) {
+    Get-ChildItem -Path $root -Recurse -Filter "opencv_world*.dll" -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -notmatch 'd\.dll$' }
 }
-if (-not $opencvDlls) {
-    foreach ($root in $opencvSearchRoots) {
-        $opencvDlls += Get-ChildItem -Path $root -Recurse -Filter "opencv_*.dll" -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -notmatch 'd\.dll$' }
-    }
-}
-if (-not $opencvDlls) {
-    throw "OpenCV DLLs were not found under $($opencvSearchRoots -join ', '). Set -OpenCvRoot to the OpenCV build root (e.g. C:\opencv\build)."
-=======
-# ── OpenCV DLLs ────────────────────────────────────────────────────
-# Prefer opencv_world*.dll (monolithic) when present, otherwise copy the
-# individual module DLLs. Narrow the search to bin directories so we don't
-# pick up random debug copies under samples/.
-$searchRoots = @((Join-Path $OpenCvRoot "x64"), (Join-Path $OpenCvRoot "bin"), $OpenCvRoot)
-$worldDlls = foreach ($root in $searchRoots) {
-    if (Test-Path $root) {
-        Get-ChildItem -Path $root -Recurse -Filter "opencv_world*.dll" -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match "\\bin\\" -and $_.FullName -notmatch "d\.dll$" }
-    }
->>>>>>> refs/remotes/origin/main
-}
-$worldDlls = $worldDlls | Select-Object -Unique -First 1
+$worldDlls = @($worldDlls) | Select-Object -Unique -First 1
 if ($worldDlls) {
     Copy-Item $worldDlls.FullName $DistDir -Force
     Write-Host "Bundled: $($worldDlls.FullName)"
 } else {
     $moduleDlls = foreach ($root in $searchRoots) {
-        if (Test-Path $root) {
-            Get-ChildItem -Path $root -Recurse -Filter "opencv_*.dll" -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match "\\bin\\" -and $_.FullName -notmatch "d\.dll$" }
-        }
+        Get-ChildItem -Path $root -Recurse -Filter "opencv_*.dll" -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch 'd\.dll$' }
     }
+    $moduleDlls = @($moduleDlls) | Select-Object -Unique
     if (-not $moduleDlls) {
-        throw "No OpenCV DLLs found under $OpenCvRoot (looked for opencv_world*.dll and opencv_*.dll)."
+        throw "OpenCV DLLs were not found under $($searchRoots -join ', '). Set -OpenCvRoot to the OpenCV build root (e.g. C:\opencv\build)."
     }
     foreach ($dll in $moduleDlls) {
         Copy-Item $dll.FullName $DistDir -Force
