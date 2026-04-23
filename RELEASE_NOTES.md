@@ -34,4 +34,4 @@ A maintenance release: security, stability, and UX improvements. No feature chan
 ## Download
 
 - **macOS (Apple Silicon)** — `FaceVeil-0.1.1-arm64.dmg`, signed and notarized. Requires macOS 12+.
-- Windows / Intel Mac: not yet available.
+- **Windows (x64)** — `FaceVeil-0.1.1-windows-x64.zip`. Unzip and run `FaceVeil.exe`. Requires Windows 10 or later.
