@@ -53,10 +53,11 @@ $OnnxRuntimeRoot = Resolve-Path $OnnxRuntimeRoot
 
 cmake -S $RootDir -B $BuildDir `
     -G $Generator `
-    -DCMAKE_BUILD_TYPE=$BuildType `
+    -DCMAKE_BUILD_TYPE=Release `
     -DCMAKE_PREFIX_PATH="$QtRoot;$OpenCvRoot" `
-    -DONNXRUNTIME_ROOT=$OnnxRuntimeRoot
-cmake --build $BuildDir --config $BuildType
+    -DONNXRUNTIME_ROOT=$OnnxRuntimeRoot `
+    -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+cmake --build $BuildDir --config Release
 
 if (-not (Test-Path $ExePath)) {
     $ExePath = Join-Path $BuildDir "$BuildType/FaceVeil.exe"
@@ -87,9 +88,24 @@ if (-not (Test-Path $onnxDll)) {
 }
 Copy-Item $onnxDll $DistDir -Force
 
-$opencvDlls = Get-ChildItem -Path $OpenCvRoot -Recurse -Filter "opencv_world*.dll" -ErrorAction SilentlyContinue
+$opencvSearchRoots = @(
+    $OpenCvRoot,
+    (Join-Path $OpenCvRoot "..")
+) | Where-Object { Test-Path $_ } | ForEach-Object { Resolve-Path $_ } | Select-Object -Unique
+
+$opencvDlls = @()
+foreach ($root in $opencvSearchRoots) {
+    $opencvDlls += Get-ChildItem -Path $root -Recurse -Filter "opencv_world*.dll" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notmatch 'd\.dll$' }
+}
 if (-not $opencvDlls) {
-    $opencvDlls = Get-ChildItem -Path $OpenCvRoot -Recurse -Filter "opencv_*.dll" -ErrorAction SilentlyContinue
+    foreach ($root in $opencvSearchRoots) {
+        $opencvDlls += Get-ChildItem -Path $root -Recurse -Filter "opencv_*.dll" -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch 'd\.dll$' }
+    }
+}
+if (-not $opencvDlls) {
+    throw "OpenCV DLLs were not found under $($opencvSearchRoots -join ', '). Set -OpenCvRoot to the OpenCV build root (e.g. C:\opencv\build)."
 }
 foreach ($dll in $opencvDlls) {
     Copy-Item $dll.FullName $DistDir -Force

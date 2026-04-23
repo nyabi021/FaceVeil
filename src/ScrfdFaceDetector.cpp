@@ -3,6 +3,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <filesystem>
 #include <numeric>
 #include <stdexcept>
 
@@ -31,7 +32,8 @@ namespace faceveil
     {
         sessionOptions_.SetIntraOpNumThreads(1);
         sessionOptions_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-        session_ = Ort::Session(env_, modelPath.c_str(), sessionOptions_);
+        const std::filesystem::path modelFsPath = modelPath;
+        session_ = Ort::Session(env_, modelFsPath.c_str(), sessionOptions_);
 
         Ort::AllocatorWithDefaultOptions allocator;
 

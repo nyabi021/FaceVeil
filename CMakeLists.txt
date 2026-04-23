@@ -68,6 +68,10 @@ qt_add_executable(FaceVeil ${FACEVEIL_APP_OPTIONS}
     include/faceveil/ScrfdFaceDetector.hpp
 )
 
+if(WIN32)
+    target_sources(FaceVeil PRIVATE assets/FaceVeil.rc)
+endif()
+
 target_include_directories(FaceVeil PRIVATE include)
 target_link_libraries(FaceVeil PRIVATE
     Qt6::Widgets

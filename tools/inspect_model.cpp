@@ -1,5 +1,6 @@
 #include <onnxruntime_cxx_api.h>
 
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -30,7 +31,8 @@ int main(int argc, char* argv[]) {
         Ort::SessionOptions options;
         options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
-        Ort::Session session(env, argv[1], options);
+        const std::filesystem::path modelPath = argv[1];
+        Ort::Session session(env, modelPath.c_str(), options);
         Ort::AllocatorWithDefaultOptions allocator;
 
         std::cout << "Inputs\n";
