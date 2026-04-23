@@ -71,12 +71,16 @@ Write-Host "OpenCV root:      $OpenCvRoot"
 Write-Host "ONNX Runtime:     $OnnxRuntimeRoot"
 
 # ── Configure + build ──────────────────────────────────────────────
+# Note: every -D argument is wrapped in double quotes so PowerShell
+# interpolates $vars. Bare `-DKEY=$var` is parsed as a parameter-style
+# token and passed through literally — which previously poisoned the
+# CMake cache with strings like "$BuildType" and broke the ninja build.
 cmake -S $RootDir -B $BuildDir `
     -G $Generator `
-    -DCMAKE_BUILD_TYPE=$BuildType `
-    -DCMAKE_PREFIX_PATH="$QtRoot;$OpenCvRoot" `
-    -DONNXRUNTIME_ROOT=$OnnxRuntimeRoot `
-    -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+    "-DCMAKE_BUILD_TYPE=$BuildType" `
+    "-DCMAKE_PREFIX_PATH=$QtRoot;$OpenCvRoot" `
+    "-DONNXRUNTIME_ROOT=$OnnxRuntimeRoot" `
+    "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF"
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed (exit $LASTEXITCODE)" }
 
 cmake --build $BuildDir --config $BuildType
