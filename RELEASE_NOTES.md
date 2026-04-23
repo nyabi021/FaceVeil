@@ -50,7 +50,7 @@ A maintenance release focused on **security**, **stability**, and **quality-of-l
 ### macOS — Apple Silicon (arm64)
 
 - `FaceVeil-0.1.1-arm64.dmg` — signed with Developer ID and notarized by Apple (no Gatekeeper warnings)
-- Requires **macOS 12 Monterey or later** on M1 / M2 / M3 / M4 / M5
+- Requires **macOS 12 Monterey or later** on Apple Silicon
 
 ### Windows
 
