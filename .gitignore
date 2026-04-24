@@ -9,3 +9,4 @@ models/*.onnx
 output/
 .idea/
 .cache/
+.claude/
